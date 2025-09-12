@@ -33,5 +33,5 @@ go.work.sum
 
 # Emacs backups and autosave files
 *~
-#*#
+\#*#
 .#*

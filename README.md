@@ -105,24 +105,36 @@ func main() {
 
 ### Key Rotation
 
-The `store.Rotate()` method allows you to generate a new encryption key for the store and re-encrypt all existing data with the new key. This is a crucial security feature for regularly updating your encryption keys.
+The `store.Rotate()` method allows you to generate a new encryption key
+for the store and re-encrypt all existing data with the new key. This is
+a crucial security feature for regularly updating your encryption keys.
 
 ## Implementation Details
 
-Every `secrets.Store` directory contains a `.secretskeys` subdirectory. This directory manages the encryption keys for the store.
+Every `secrets.Store` directory contains a `.secretskeys`
+subdirectory. This directory manages the encryption keys for the store.
 
 ### Key Management
 
 In the `.secretskeys` directory, you will find:
-- `currentkey`: A single byte file indicating which key number (0-255) is currently used for newly encrypted data.
-- `key<N>`: One or more binary files, where `<N>` is a number between 0 and 255. Each `key<N>` file contains the encryption key for that index. The first byte of a `key<N>` file indicates the encryption algorithm used (currently, only algorithm 0, AES256GCM, is defined), followed by the key itself, which is intended to be encrypted by a secure system like TPM2.0. If TPM2.0 or similar is unavailable, a less secure "unit key" might be used.
+- `currentkey`: A single byte file indicating which key number (0-255)
+  is currently used for newly encrypted data.
+- `key<N>`: One or more binary files, where `<N>` is a number between 0
+  and 255. Each `key<N>` file contains the encryption key for that
+  index. The first byte of a `key<N>` file indicates the encryption
+  algorithm used (currently, only algorithm 0, AES256GCM, is defined),
+  followed by the key itself, encrypted with the key passed in to
+  `secrets.NewStore()`.
+- TODO: Investigate what algorithm(s) to use to encrypt the keys.
 
 ### Data Storage
 
 All other files in the `secrets.Store` directory are encrypted user data. When `store.Save(path, data)` is called:
-- The `path` is cleaned using `filepath.Clean` and validated to ensure it remains within the store's hierarchy.
+- The `path` is cleaned using `filepath.Clean()` and validated to ensure
+  it remains within the store's hierarchy.
 - The `data` is encrypted.
-- The first byte of the saved data file indicates the key number used for encryption, followed by the encrypted data.
+- The first byte of the saved data file indicates the key number used
+  for encryption, followed by the encrypted data.
 
 ### Store Initialization and Key Generation
 
@@ -133,7 +145,8 @@ When `secrets.NewStore()` is called on an empty directory:
 ### Key Rotation Process
 
 The `store.Rotate()` function performs the following:
-1. Generates a new key, incrementing the `currentkey` index (rolling over to 0 if `currentkey` is 255).
+1. Generates a new key, incrementing the `currentkey` index (rolling
+   over to 0 if `currentkey` is 255).
 2. Saves the new key in a `key<N>` file.
 3. Updates `currentkey` in the config file to point to the new key.
 4. Re-encrypts all existing data in the store with the new key.
@@ -141,9 +154,20 @@ The `store.Rotate()` function performs the following:
 
 ### Concurrency and Crash Recovery
 
-The library aims to be thread-safe and process-safe using file `rwlocks`. Considerations for NFS filesystems and multi-computer safety require further research into mechanisms like `flock`.
+The library aims to be thread-safe and process-safe using file
+`rwlocks`. Considerations for NFS filesystems and multi-computer safety
+require further research into mechanisms like `flock`.
 
 When `NewStore()` is called:
-- It verifies the existence of the `currentkey` file and associated key file.
-- If multiple key files are present (indicating a potential incomplete rotation from a previous crash), a goroutine is launched to walk through the store hierarchy. This goroutine re-encrypts any data not using `currentkey` with the `currentkey`.
-- To handle concurrent rotations or crashes during re-encryption, mechanisms are in place (e.g., monitoring the config file for changes via `inotify`) to stop ongoing re-encryption goroutines if a new rotation is initiated. This ensures data consistency and prevents corruption. The responsibility for updating secrets shifts to the latest rotation process.
+- It verifies the existence of the `currentkey` file and associated key
+  file.
+- If multiple key files are present (indicating a potential incomplete
+  rotation from a previous crash), a goroutine is launched to walk
+  through the store hierarchy. This goroutine re-encrypts any data not
+  using `currentkey` with the `currentkey`.
+- To handle concurrent rotations or crashes during re-encryption,
+  mechanisms are in place (e.g., monitoring the config file for changes
+  via `inotify`) to stop ongoing re-encryption goroutines if a new
+  rotation is initiated. This ensures data consistency and prevents
+  corruption. The responsibility for updating secrets shifts to the
+  latest rotation process.

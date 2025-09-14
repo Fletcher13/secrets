@@ -24,12 +24,14 @@ To install the `secrets` package, use `go get`:
 go get github.com/fletcher13/secrets
 ```
 
+This package requires Go 1.24 or later.
+
 ## Usage
 
 ### Creating or Opening a Secret Store
 
 To create a new `secrets.Store` or open an existing one, use
-`secrets.NewStore(dirpath string, key []byte)`.
+`secrets.NewStore(dirpath string, password []byte)`.
 
 - If `dirpath` is an empty directory, a new store will be initialized there.
 - If `dirpath` contains an existing `.secretskeys` file, the store will be
@@ -37,13 +39,19 @@ To create a new `secrets.Store` or open an existing one, use
 - An error will be returned if `dirpath` is not empty and does not contain
 	a secrets store.
 
-The `key` parameter is crucial for decrypting the store's internal
-keys. It's recommended to derive this key securely, for example, using a
-key derivation function like PBKDF2 from a user-provided password.
+The `password` parameter is crucial for decrypting the store's internal
+keys. This password should *not* be saved with the secrets store, as that
+would defeat the purpose of encrypting the data.
 
-### Suggestions
+If `password` is nil, and a new store will be created, a random key will
+be created and it will attempt to use TPM2.0 to seal that key, and save
+the sealed key with the store in a file called `sealedkey` in the
+`.secretskeys` directory.  If `password` is nil and this opens an
+existing store, it will look for the `sealedkey` file and attempt to
+unseal it with TPM2.0.  If that does not work, an error will be
+returned.
 
-TODO: Add detailed instructions for possible secure "unit" keys.
+### Zeroization
 
 Never put sensitive data in a string, always use a byte slice.  Byte
 slices can be zeroed when the data is no longer needed, but strings

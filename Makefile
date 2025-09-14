@@ -25,22 +25,23 @@ clean:
 # Download dependencies to vendor directory
 vendor:
 	@echo "Downloading dependencies..."
-	@go mod vendor
+	go mod tidy
+	go mod vendor
 
 # Install dependencies
 deps:
 	@echo "Installing dependencies..."
-	@go mod download
+	go mod download
 
 # Format code
 fmt:
 	@echo "Formatting code..."
-	@go fmt ./...
+	go fmt ./...
 
 # Lint code
 lint:
 	@echo "Linting code..."
-	@golangci-lint run || echo "golangci-lint not installed, skipping..."
+	golangci-lint run || echo "golangci-lint not installed, skipping..."
 
 # Run all checks
 check: fmt lint test

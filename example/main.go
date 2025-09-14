@@ -58,11 +58,11 @@ func main() {
 	fmt.Printf("Loaded secret: %s\n", string(loadedData))
 
 	// List all secrets
-	secrets, err := store.List()
+	alldata, err := store.List()
 	if err != nil {
 		log.Fatalf("Error listing secrets: %v", err)
 	}
-	fmt.Printf("All secrets: %v\n", secrets)
+	fmt.Printf("All secrets: %v\n", alldata)
 
 	// Get store information
 	info, err := store.GetStoreInfo()

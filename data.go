@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/crypto/scrypt"
 )
 
 // Save stores sensitive data at the given path

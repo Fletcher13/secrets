@@ -22,10 +22,7 @@ func TestNewStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		store.Close()
-		os.RemoveAll("test_dir")
-	}()
+	defer testCleanup(t, store)
 
 	if store == nil {
 		t.Error("Store should not be nil")
@@ -42,10 +39,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		store.Close()
-		os.RemoveAll("test_save_load")
-	}()
+	defer testCleanup(t, store)
 
 	// Test saving and loading data
 	testData := []byte("test_secret_data")
@@ -76,10 +70,7 @@ func TestList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		store.Close()
-		os.RemoveAll("test_list")
-	}()
+	defer testCleanup(t, store)
 
 	// Save multiple secrets
 	secrets := map[string][]byte{
@@ -96,7 +87,7 @@ func TestList(t *testing.T) {
 	}
 
 	// List secrets
-	list, err := store.List()
+	list, err := store.list()
 	if err != nil {
 		t.Fatalf("Failed to list secrets: %v", err)
 	}
@@ -130,10 +121,7 @@ func TestDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		store.Close()
-		os.RemoveAll("test_delete")
-	}()
+	defer testCleanup(t, store)
 
 	// Save a secret
 	path := "test/secret"
@@ -175,10 +163,7 @@ func TestKeyRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		store.Close()
-		os.RemoveAll("test_rotation")
-	}()
+	defer testCleanup(t, store)
 
 	// Save some data
 	testData := []byte("test_rotation_data")
@@ -291,10 +276,7 @@ func TestPathValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		store.Close()
-		os.RemoveAll("test_path_validation")
-	}()
+	defer testCleanup(t, store)
 
 	// Test invalid paths
 	invalidPaths := []string{
@@ -309,5 +291,16 @@ func TestPathValidation(t *testing.T) {
 		if err == nil {
 			t.Errorf("Expected error for invalid path %s", invalidPath)
 		}
+	}
+}
+
+func testCleanup(t *testing.T, store *Store) {
+	err := store.Close()
+	if err != nil {
+		t.Fatalf("Failed to load data: %v", err)
+	}
+	err = os.RemoveAll("test_list")
+	if err != nil {
+		t.Fatalf("Failed to load data: %v", err)
 	}
 }

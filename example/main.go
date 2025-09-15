@@ -17,7 +17,10 @@ func main() {
 	dir := "example_secret_store"
 
 	// Clean up any existing directory
-	os.RemoveAll(dir)
+	err := os.RemoveAll(dir)
+	if err != nil {
+		log.Fatalf("Error ensuring store directory does not exist: %v", err)
+	}
 
 	store, err := secrets.NewStore(dir, encryptionKey)
 	if err != nil {
@@ -27,7 +30,10 @@ func main() {
 		if err := store.Close(); err != nil {
 			log.Printf("Error closing store: %v", err)
 		}
-		os.RemoveAll(dir) // Clean up the directory when done
+		err = os.RemoveAll(dir) // Clean up the directory when done
+		if err != nil {
+			log.Fatalf("Error ensuring store directory does not exist: %v", err)
+		}
 	}()
 
 	fmt.Println("=== Secrets Store Example ===")
@@ -56,13 +62,6 @@ func main() {
 		log.Fatalf("Error loading secret: %v", err)
 	}
 	fmt.Printf("Loaded secret: %s\n", string(loadedData))
-
-	// List all secrets
-	alldata, err := store.List()
-	if err != nil {
-		log.Fatalf("Error listing secrets: %v", err)
-	}
-	fmt.Printf("All secrets: %v\n", alldata)
 
 	// Get store information
 	info, err := store.GetStoreInfo()

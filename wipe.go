@@ -14,16 +14,10 @@ func Wipe(data []byte) {
 	}
 
 	// Fill with random data first to ensure no patterns remain
-	if _, err := rand.Read(data); err != nil {
-		// If random fill fails, just zero it
-		for i := range data {
-			data[i] = 0
-		}
-	} else {
-		// Then zero it out
-		for i := range data {
-			data[i] = 0
-		}
+	rand.Read(data) //nolint: errcheck
+	// Don't bother checking err because we do the same thing either way.
+	for i := range data {
+		data[i] = 0
 	}
 
 	// Force a memory barrier to ensure the writes are visible

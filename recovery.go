@@ -193,7 +193,7 @@ func (s *Store) GetStoreInfo() (*StoreInfo, error) {
 	}
 
 	// Count total secrets
-	secrets, err := s.List()
+	secrets, err := s.list()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list secrets: %w", err)
 	}

@@ -12,24 +12,20 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
+// TODO: Use flock for interprocess locking.
+
 // Save stores sensitive data at the given path
 func (s *Store) Save(path string, data []byte) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	// Clean and validate path
-	cleanPath := filepath.Clean(path)
-	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "/..") {
+	fullPath := filepath.Clean(filepath.Join(s.dir, path))
+	if !strings.HasPrefix(fullPath, s.dir) {
 		return fmt.Errorf("path outside store hierarchy: %s", path)
 	}
 
-	// Ensure path is relative
-	if filepath.IsAbs(cleanPath) {
-		return fmt.Errorf("absolute paths not allowed: %s", path)
-	}
-
 	// Create directory structure if needed
-	fullPath := filepath.Join(s.dir, cleanPath)
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -51,30 +47,24 @@ func (s *Store) Load(path string) ([]byte, error) {
 	defer s.mutex.RUnlock()
 
 	// Clean and validate path
-	cleanPath := filepath.Clean(path)
-	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "/..") {
+	fullPath := filepath.Clean(filepath.Join(s.dir, path))
+	if !strings.HasPrefix(fullPath, s.dir) {
 		return nil, fmt.Errorf("path outside store hierarchy: %s", path)
 	}
 
-	// Ensure path is relative
-	if filepath.IsAbs(cleanPath) {
-		return nil, fmt.Errorf("absolute paths not allowed: %s", path)
-	}
-
 	// Read encrypted data
-	fullPath := filepath.Join(s.dir, cleanPath)
 	encryptedData, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("secret not found: %s", path)
 		}
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to read file: %s", err.Error())
 	}
 
 	// Decrypt data
 	data, err := s.decryptData(encryptedData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt data: %w", err)
+		return nil, fmt.Errorf("failed to decrypt data: %s", err.Error())
 	}
 
 	return data, nil
@@ -100,12 +90,12 @@ func (s *Store) Delete(path string) error {
 	return os.Remove(fullPath)
 }
 
-// List returns all secret paths in the store
-func (s *Store) List() ([]string, error) {
+// list returns all secret paths in the store
+func (s *Store) list() ([]string, error) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	var secrets []string
+	var alldata []string
 	err := filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -125,11 +115,11 @@ func (s *Store) List() ([]string, error) {
 			return err
 		}
 
-		secrets = append(secrets, relPath)
+		alldata = append(alldata, relPath)
 		return nil
 	})
 
-	return secrets, err
+	return alldata, err
 }
 
 // encryptData encrypts data using the current key
@@ -205,21 +195,6 @@ func (s *Store) decryptData(encryptedData []byte) ([]byte, error) {
 	}
 
 	return data, nil
-}
-
-// Close closes the store and cleans up resources
-func (s *Store) Close() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	// Signal recovery process to stop
-	close(s.stopRecovery)
-
-	// Clear sensitive data from memory
-	Wipe(s.masterKey)
-	Wipe(s.currentKey)
-
-	return nil
 }
 
 // DeriveKeyFromPassword derives a key from a password using scrypt

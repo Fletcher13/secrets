@@ -28,7 +28,7 @@ const (
 // Store represents a secure storage for sensitive data
 type Store struct {
 	dir             string
-	masterKey       []byte
+	primaryKey       []byte
 	currentKey      []byte
 	currentKeyIndex uint8
 	mutex           sync.RWMutex
@@ -57,11 +57,11 @@ func NewStore(dirpath string, key []byte) (*Store, error) {
 
 	store := &Store{
 		dir:          dirpath,
-		masterKey:    make([]byte, len(key)),
+		primaryKey:    make([]byte, len(key)),
 		recoveryCh:   make(chan struct{}, 1),
 		stopRecovery: make(chan struct{}),
 	}
-	copy(store.masterKey, key)
+	copy(store.primaryKey, key)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(dirpath, 0700); err != nil {
@@ -93,6 +93,21 @@ func NewStore(dirpath string, key []byte) (*Store, error) {
 	go store.recoveryProcess()
 
 	return store, nil
+}
+
+// Close closes the store and cleans up resources
+func (s *Store) Close() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Signal recovery process to stop
+	close(s.stopRecovery)
+
+	// Clear sensitive data from memory
+	Wipe(s.primaryKey)
+	Wipe(s.currentKey)
+
+	return nil
 }
 
 // initializeStore sets up a new store with key0
@@ -154,8 +169,8 @@ func (s *Store) saveCurrentKeyIndex() error {
 func (s *Store) saveKey(index uint8, key []byte) error {
 	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
 
-	// Encrypt the key with master key using AES-GCM
-	block, err := aes.NewCipher(s.masterKey[:32])
+	// Encrypt the key with primary key using AES-GCM
+	block, err := aes.NewCipher(s.primaryKey[:32])
 	if err != nil {
 		return fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -202,7 +217,7 @@ func (s *Store) loadKey(index uint8) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported algorithm: %d", algorithm)
 	}
 
-	block, err := aes.NewCipher(s.masterKey[:32])
+	block, err := aes.NewCipher(s.primaryKey[:32])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}

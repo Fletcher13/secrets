@@ -235,9 +235,9 @@ func (s *Store) encryptDataWithKey(data []byte, key []byte, keyIndex uint8) ([]b
 }
 
 // deleteKey removes a key file
-func (s *Store) deleteKey(index uint8) error {
+func (s *Store) deleteKey(index uint8) {
 	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
-	return os.Remove(keyPath)
+	_ = os.Remove(keyPath)
 }
 
 // cleanupOldKeys removes old key files that are no longer needed
@@ -256,7 +256,7 @@ func (s *Store) cleanupOldKeys() {
 
 		// Extract key index from filename
 		var keyIndex uint8
-		if _, err := fmt.Sscanf(entry.Name(), "key%d", &keyIndex); err != nil {
+		if _, err = fmt.Sscanf(entry.Name(), "key%d", &keyIndex); err != nil {
 			continue
 		}
 

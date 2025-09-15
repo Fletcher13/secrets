@@ -33,18 +33,13 @@ deps:
 	@echo "Installing dependencies..."
 	go mod download
 
-# Format code
-fmt:
-	@echo "Formatting code..."
-	go fmt ./...
-
 # Lint code
 lint:
 	@echo "Linting code..."
-	golangci-lint run || echo "golangci-lint not installed, skipping..."
+	golangci-lint run
 
 # Run all checks
-check: fmt lint test
+check: lint test
 
 # Build everything
 all: deps vendor build test

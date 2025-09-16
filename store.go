@@ -28,7 +28,7 @@ const (
 // Store represents a secure storage for sensitive data
 type Store struct {
 	dir             string
-	primaryKey       []byte
+	primaryKey      []byte
 	currentKey      []byte
 	currentKeyIndex uint8
 	mutex           sync.RWMutex
@@ -57,7 +57,7 @@ func NewStore(dirpath string, key []byte) (*Store, error) {
 
 	store := &Store{
 		dir:          dirpath,
-		primaryKey:    make([]byte, len(key)),
+		primaryKey:   make([]byte, len(key)),
 		recoveryCh:   make(chan struct{}, 1),
 		stopRecovery: make(chan struct{}),
 	}
@@ -97,10 +97,8 @@ func NewStore(dirpath string, key []byte) (*Store, error) {
 
 // Close closes the store and cleans up resources
 func (s *Store) Close() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	// Signal recovery process to stop
+	// Signal recovery process to stop (idempotent)
+	defer func() { recover() }()
 	close(s.stopRecovery)
 
 	// Clear sensitive data from memory
@@ -112,9 +110,6 @@ func (s *Store) Close() error {
 
 // initializeStore sets up a new store with key0
 func (s *Store) initializeStore() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	// Generate initial key
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
@@ -162,6 +157,13 @@ func (s *Store) loadCurrentKey() error {
 // saveCurrentKeyIndex saves the current key index
 func (s *Store) saveCurrentKeyIndex() error {
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
+	// Exclusive lock during write of current key index
+	lk, err := lockExclusive(currentKeyPath)
+	if err != nil {
+		return err
+	}
+	defer lk.unlock()
+
 	return os.WriteFile(currentKeyPath, []byte{s.currentKeyIndex}, 0600)
 }
 
@@ -197,12 +199,26 @@ func (s *Store) saveKey(index uint8, key []byte) error {
 	copy(data[1:], nonce)
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
+	// Exclusive lock while writing key file
+	lk, err := lockExclusive(keyPath)
+	if err != nil {
+		return err
+	}
+	defer lk.unlock()
+
 	return os.WriteFile(keyPath, data, 0600)
 }
 
 // loadKey loads and decrypts a key
 func (s *Store) loadKey(index uint8) ([]byte, error) {
 	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
+	// Shared lock during read
+	lk, err := lockShared(keyPath)
+	if err != nil {
+		return nil, err
+	}
+	defer lk.unlock()
+
 	data, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)

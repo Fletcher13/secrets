@@ -16,11 +16,11 @@ import (
 
 // Save stores sensitive data at the given path
 func (s *Store) Save(path string, data []byte) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	// Clean and validate path
 	fullPath := filepath.Clean(filepath.Join(s.dir, path))
+	if filepath.IsAbs(path) {
+		return fmt.Errorf("absolute paths not allowed: %s", path)
+	}
 	if !strings.HasPrefix(fullPath, s.dir) {
 		return fmt.Errorf("path outside store hierarchy: %s", path)
 	}
@@ -37,20 +37,30 @@ func (s *Store) Save(path string, data []byte) error {
 		return fmt.Errorf("failed to encrypt data: %w", err)
 	}
 
-	// Save to file
+	// Save to file with exclusive lock
+	lk, err := lockExclusive(fullPath)
+	if err != nil {
+		return err
+	}
+	defer lk.unlock()
+
 	return os.WriteFile(fullPath, encryptedData, 0600)
 }
 
 // Load retrieves sensitive data from the given path
 func (s *Store) Load(path string) ([]byte, error) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-
 	// Clean and validate path
 	fullPath := filepath.Clean(filepath.Join(s.dir, path))
 	if !strings.HasPrefix(fullPath, s.dir) {
 		return nil, fmt.Errorf("path outside store hierarchy: %s", path)
 	}
+
+	// Shared lock for read
+	lk, err := lockShared(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	defer lk.unlock()
 
 	// Read encrypted data
 	encryptedData, err := os.ReadFile(fullPath)
@@ -72,9 +82,6 @@ func (s *Store) Load(path string) ([]byte, error) {
 
 // Delete removes sensitive data from the given path
 func (s *Store) Delete(path string) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	// Clean and validate path
 	cleanPath := filepath.Clean(path)
 	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "/..") {
@@ -87,26 +94,36 @@ func (s *Store) Delete(path string) error {
 	}
 
 	fullPath := filepath.Join(s.dir, cleanPath)
+
+	// Require that the file exists; do not create it when locking
+	if _, err := os.Stat(fullPath); err != nil {
+		return err
+	}
+
+	// Exclusive lock before delete
+	lk, err := lockExclusive(fullPath)
+	if err != nil {
+		return err
+	}
+	defer lk.unlock()
+
 	return os.Remove(fullPath)
 }
 
 // list returns all secret paths in the store
 func (s *Store) list() ([]string, error) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-
 	var alldata []string
 	err := filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Skip directories and the keys directory
+		// Skip the keys directory but recurse into other directories
 		if info.IsDir() {
-			if path == s.dir || strings.HasPrefix(path, filepath.Join(s.dir, KeysDir)) {
-				return nil
+			if strings.HasPrefix(path, filepath.Join(s.dir, KeysDir)) {
+				return filepath.SkipDir
 			}
-			return filepath.SkipDir
+			return nil
 		}
 
 		// Get relative path

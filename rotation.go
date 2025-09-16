@@ -13,9 +13,7 @@ import (
 
 // Rotate generates a new encryption key and re-encrypts all data
 func (s *Store) Rotate() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
+	// Stop any ongoing recovery processes quickly (no long-held mutex)
 	// Stop any ongoing recovery processes
 	select {
 	case s.stopRecovery <- struct{}{}:
@@ -47,10 +45,12 @@ func (s *Store) Rotate() error {
 		return fmt.Errorf("failed to list data files: %w", err)
 	}
 
-	// Re-encrypt all data files with the new key
+	// Swap current key values (briefly use mutex to guard in-memory state)
+	s.mutex.Lock()
 	oldKey := s.currentKey
 	s.currentKey = newKey
 	s.currentKeyIndex = newKeyIndex
+	s.mutex.Unlock()
 
 	var reencryptErrors []error
 	var wg sync.WaitGroup
@@ -80,7 +80,7 @@ func (s *Store) Rotate() error {
 		reencryptErrors = append(reencryptErrors, err)
 	}
 
-	// Update current key index
+	// Update current key index (exclusive lock inside)
 	if err := s.saveCurrentKeyIndex(); err != nil {
 		return fmt.Errorf("failed to save current key index: %w", err)
 	}
@@ -111,12 +111,12 @@ func (s *Store) listDataFiles() ([]string, error) {
 			return err
 		}
 
-		// Skip directories and the keys directory
+		// Skip the keys directory but recurse into other directories
 		if info.IsDir() {
-			if path == s.dir || strings.HasPrefix(path, filepath.Join(s.dir, KeysDir)) {
-				return nil
+			if strings.HasPrefix(path, filepath.Join(s.dir, KeysDir)) {
+				return filepath.SkipDir
 			}
-			return filepath.SkipDir
+			return nil
 		}
 
 		// Get relative path

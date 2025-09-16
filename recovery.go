@@ -28,12 +28,9 @@ func (s *Store) recoveryProcess() {
 
 // checkAndRecover checks for inconsistent key usage and recovers if needed
 func (s *Store) checkAndRecover() error {
-	s.mutex.RLock()
-
 	// Check if current key file exists and is valid
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
 	if _, err := os.Stat(currentKeyPath); os.IsNotExist(err) {
-		s.mutex.RUnlock()
 		return fmt.Errorf("current key file missing")
 	}
 
@@ -41,7 +38,6 @@ func (s *Store) checkAndRecover() error {
 	keysDir := filepath.Join(s.dir, KeysDir)
 	entries, err := os.ReadDir(keysDir)
 	if err != nil {
-		s.mutex.RUnlock()
 		return fmt.Errorf("failed to read keys directory: %w", err)
 	}
 
@@ -58,6 +54,7 @@ func (s *Store) checkAndRecover() error {
 		keyIndices = append(keyIndices, keyIndex)
 	}
 
+	s.mutex.RLock()
 	currentKeyIndex := s.currentKeyIndex
 	currentKey := s.currentKey
 	s.mutex.RUnlock()

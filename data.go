@@ -40,14 +40,7 @@ func (s *Store) Save(path string, data []byte) error {
 		return fmt.Errorf("failed to encrypt data: %w", err)
 	}
 
-	// Save to file with exclusive lock
-	lk, err := lockExclusive(fullPath)
-	if err != nil {
-		return err
-	}
-	defer lk.unlock()
-
-	return os.WriteFile(fullPath, encryptedData, 0600)
+	return writeFile(fullPath, encryptedData, 0600)
 }
 
 // Load retrieves sensitive data from the given path
@@ -58,15 +51,8 @@ func (s *Store) Load(path string) ([]byte, error) {
 		return nil, fmt.Errorf("path outside store hierarchy: %s", path)
 	}
 
-	// Shared lock for read
-	lk, err := lockShared(fullPath)
-	if err != nil {
-		return nil, err
-	}
-	defer lk.unlock()
-
 	// Read encrypted data
-	encryptedData, err := os.ReadFile(fullPath)
+	encryptedData, err := readFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("secret not found: %s", path)

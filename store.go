@@ -48,14 +48,27 @@ type DataFile struct {
 // TODO: Ensure keys cannot be written to swap or core files.
 
 // CreateStore creates a new Store
-func CreateStore(dirpath string, key []byte) (*Store, error) {
+func CreateStore(dirpath string, pass []byte) (*Store, error) {
 	// TODO: if len(key) == 0 { Use TPM2.0 sealed key }
-	if len(key) < 32 {
+	if len(pass) < 32 {
 		// TODO: Use PBKDF2 to generate the key from any password.
 		return nil, fmt.Errorf("key must be at least 32 bytes long")
 	}
 
-	// TODO: Return error if directory exists and is not empty.
+	// Return error if directory exists and is not empty.
+	stat, err := os.Stat(dirpath)
+	if err == nil {
+		if stat.IsDir() != true {
+			return nil, fmt.Errorf("%s exists but is not a directory",
+				dirpath)
+		}
+		dirFiles, err := os.ReadDir(dirpath)
+		if err != nil || dirFiles != 2 {
+			return nil, fmt.Errorf("%s is not empty", dirpath)
+		}
+	} else if err.Is() != ErrDoesNotExist {
+		return nil, fmt.Errorf("error accessing%s: %w", err)
+	}
 
 	// Create keys directory, which will auto-create store dir if it
 	// does not already exist.
@@ -65,6 +78,12 @@ func CreateStore(dirpath string, key []byte) (*Store, error) {
 	}
 
 	// Initialize new store
+	store := &Store{
+		dir:          dirpath,
+		primaryKey:   make([]byte, len(key)),
+	}
+	copy(store.primaryKey, key)
+
 	// Generate initial key
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
@@ -72,7 +91,7 @@ func CreateStore(dirpath string, key []byte) (*Store, error) {
 	}
 
 	// Encrypt and save key0
-	if err := s.saveKey(0, key); err != nil {
+	if err := store.saveKey(0, key); err != nil {
 		return fmt.Errorf("failed to save key0: %w", err)
 	}
 
@@ -143,14 +162,7 @@ func (s *Store) loadCurrentKey() error {
 	// Read current key index
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
 
-	// Shared lock during read of current key index
-	lk, err := lockShared(currentKeyPath)
-	if err != nil {
-		return err
-	}
-	defer lk.unlock()
-
-	data, err := os.ReadFile(currentKeyPath)
+	data, err := readFile(currentKeyPath)
 	if err != nil {
 		return fmt.Errorf("failed to read current key file: %w", err)
 	}
@@ -174,14 +186,8 @@ func (s *Store) loadCurrentKey() error {
 // saveCurrentKeyIndex saves the current key index
 func (s *Store) saveCurrentKeyIndex() error {
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
-	// Exclusive lock during write of current key index
-	lk, err := lockExclusive(currentKeyPath)
-	if err != nil {
-		return err
-	}
-	defer lk.unlock()
 
-	return os.WriteFile(currentKeyPath, []byte{s.currentKeyIndex}, 0600)
+	return writeFile(currentKeyPath, []byte{s.currentKeyIndex}, 0600)
 }
 
 // saveKey encrypts and saves a key
@@ -216,27 +222,14 @@ func (s *Store) saveKey(index uint8, key []byte) error {
 	copy(data[1:], nonce)
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
-	// Exclusive lock while writing key file
-	lk, err := lockExclusive(keyPath)
-	if err != nil {
-		return err
-	}
-	defer lk.unlock()
-
-	return os.WriteFile(keyPath, data, 0600)
+	return writeFile(keyPath, data, 0600)
 }
 
 // loadKey loads and decrypts a key
 func (s *Store) loadKey(index uint8) ([]byte, error) {
 	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
-	// Shared lock during read
-	lk, err := lockShared(keyPath)
-	if err != nil {
-		return nil, err
-	}
-	defer lk.unlock()
 
-	data, err := os.ReadFile(keyPath)
+	data, err := readFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}

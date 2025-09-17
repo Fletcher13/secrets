@@ -1,7 +1,6 @@
 package secrets
 
 import (
-	"os"
 	"testing"
 )
 

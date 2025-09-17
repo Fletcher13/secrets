@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -111,13 +112,17 @@ func TestPathValidation(t *testing.T) {
 	// Test invalid paths
 	invalidPaths := []string{
 		"../outside",
-		"/absolute/path",
 		"path/../../outside",
 		"path/..",
+		"",
 	}
 
 	for _, invalidPath := range invalidPaths {
 		err = store.Save(invalidPath, []byte("data"))
+		if err == nil {
+			t.Errorf("Expected error for invalid path %s", invalidPath)
+		}
+		_, err = store.Load(invalidPath)
 		if err == nil {
 			t.Errorf("Expected error for invalid path %s", invalidPath)
 		}
@@ -604,15 +609,6 @@ func TestKeyInUse_TrueAndFalse(t *testing.T) {
 	}
 	if st.keyInUse(7) {
 		t.Fatal("expected keyInUse(7) to be false")
-	}
-}
-
-// Ensure WipeString is invoked (behavior not strictly testable but covers function)
-func TestWipeString(t *testing.T) {
-	s := "secret"
-	WipeString(&s)
-	if s != "" {
-		t.Fatal("expected string to be cleared")
 	}
 }
 

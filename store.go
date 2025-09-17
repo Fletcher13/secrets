@@ -14,15 +14,9 @@ const (
 	// Algorithm constants
 	AlgorithmAES256GCM = 0
 
-	// Key derivation constants
-	ScryptN      = 32768
-	ScryptR      = 8
-	ScryptP      = 1
-	ScryptKeyLen = 32
-
 	// File names
-	CurrentKeyFile = ".secretskeys/currentkey"
 	KeysDir        = ".secretskeys"
+	CurrentKeyFile = KeysDir + "currentkey"
 )
 
 // Store represents a secure storage for sensitive data
@@ -31,6 +25,8 @@ type Store struct {
 	primaryKey      []byte
 	currentKey      []byte
 	currentKeyIndex uint8
+	dirPerm         uint
+	filePerm        uint
 	mutex           sync.RWMutex
 	recoveryCh      chan struct{}
 	stopRecovery    chan struct{}
@@ -49,67 +45,26 @@ type DataFile struct {
 	Nonce         []byte
 }
 
-// NewStore creates a new Store or opens an existing one
-func NewStore(dirpath string, key []byte) (*Store, error) {
+// TODO: Ensure keys cannot be written to swap or core files.
+
+// CreateStore creates a new Store
+func CreateStore(dirpath string, key []byte) (*Store, error) {
+	// TODO: if len(key) == 0 { Use TPM2.0 sealed key }
 	if len(key) < 32 {
+		// TODO: Use PBKDF2 to generate the key from any password.
 		return nil, fmt.Errorf("key must be at least 32 bytes long")
 	}
 
-	store := &Store{
-		dir:          dirpath,
-		primaryKey:   make([]byte, len(key)),
-		recoveryCh:   make(chan struct{}, 1),
-		stopRecovery: make(chan struct{}),
-	}
-	copy(store.primaryKey, key)
+	// TODO: Return error if directory exists and is not empty.
 
-	// Ensure directory exists
-	if err := os.MkdirAll(dirpath, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
-	}
-
+	// Create keys directory, which will auto-create store dir if it
+	// does not already exist.
 	keysDir := filepath.Join(dirpath, KeysDir)
 	if err := os.MkdirAll(keysDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create keys directory: %w", err)
+		return nil, fmt.Errorf("failed to create keys directory: %v", err)
 	}
 
-	// Check if this is an existing store or needs initialization
-	currentKeyPath := filepath.Join(dirpath, CurrentKeyFile)
-	if _, err := os.Stat(currentKeyPath); os.IsNotExist(err) {
-		// Initialize new store
-		if err := store.initializeStore(); err != nil {
-			return nil, fmt.Errorf("failed to initialize store: %w", err)
-		}
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to check current key file: %w", err)
-	} else {
-		// Open existing store
-		if err := store.loadCurrentKey(); err != nil {
-			return nil, fmt.Errorf("failed to load current key: %w", err)
-		}
-	}
-
-	// Start recovery process if needed
-	go store.recoveryProcess()
-
-	return store, nil
-}
-
-// Close closes the store and cleans up resources
-func (s *Store) Close() error {
-	// Signal recovery process to stop (idempotent)
-	defer func() { recover() }()
-	close(s.stopRecovery)
-
-	// Clear sensitive data from memory
-	Wipe(s.primaryKey)
-	Wipe(s.currentKey)
-
-	return nil
-}
-
-// initializeStore sets up a new store with key0
-func (s *Store) initializeStore() error {
+	// Initialize new store
 	// Generate initial key
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
@@ -126,13 +81,75 @@ func (s *Store) initializeStore() error {
 	s.currentKeyIndex = 0
 
 	// Save current key index
-	return s.saveCurrentKeyIndex()
+	if err := s.saveCurrentKeyIndex(); err != nil {
+		return nil, fmt.Errorf("failed to initialize store: %v", err)
+	}
+
+	// Open existing store
+	return OpenStore(dirpath, key)
+}
+
+// OpenStore opens an existing Store
+func OpenStore(dirpath string, key []byte) (*Store, error) {
+	// TODO: if len(key) == 0 { Use TPM2.0 sealed key }
+	if len(key) < 32 {
+		// TODO: Use PBKDF2 to generate the key from any password.
+		return nil, fmt.Errorf("key must be at least 32 bytes long")
+	}
+
+	store := &Store{
+		dir:          dirpath,
+		primaryKey:   make([]byte, len(key)),
+		recoveryCh:   make(chan struct{}, 1),
+		stopRecovery: make(chan struct{}),
+	}
+	copy(store.primaryKey, key)
+
+	keysDir := filepath.Join(dirpath, KeysDir)
+	currentKeyPath := filepath.Join(dirpath, CurrentKeyFile)
+	if _, err := os.Stat(currentKeyPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("directory %s is not a secrets store", dirpath)
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to read current key file: %v", err)
+	}
+
+	if err := store.loadCurrentKey(); err != nil {
+		return nil, fmt.Errorf("failed to load current key: %v", err)
+	}
+
+	// Start recovery process if needed
+	go store.recoveryProcess()
+
+	return store, nil
+}
+
+// Close closes the store and cleans up resources
+func (s *Store) Close() error {
+	// closing an already closed channel can cause a panic.  Ignore the panic.
+	defer func() { _ = recover() }()
+
+	// Signal recovery process to stop (idempotent)
+	close(s.stopRecovery)
+
+	// Clear sensitive data from memory
+	Wipe(s.primaryKey)
+	Wipe(s.currentKey)
+
+	return nil
 }
 
 // loadCurrentKey loads the current encryption key
 func (s *Store) loadCurrentKey() error {
 	// Read current key index
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
+
+	// Shared lock during read of current key index
+	lk, err := lockShared(currentKeyPath)
+	if err != nil {
+		return err
+	}
+	defer lk.unlock()
+
 	data, err := os.ReadFile(currentKeyPath)
 	if err != nil {
 		return fmt.Errorf("failed to read current key file: %w", err)

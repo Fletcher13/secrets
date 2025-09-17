@@ -3,7 +3,6 @@ package secrets
 import (
 	"crypto/rand"
 	"runtime"
-	"unsafe"
 )
 
 // Wipe securely zeros out sensitive data in memory
@@ -14,22 +13,18 @@ func Wipe(data []byte) {
 	}
 
 	// Fill with random data first to ensure no patterns remain
-	rand.Read(data) //nolint: errcheck
+	_, _ = rand.Read(data)
 	// Don't bother checking err because we do the same thing either way.
 	for i := range data {
 		data[i] = 0
 	}
 
-	// Force a memory barrier to ensure the writes are visible
+	// Ensure the above writes are not optimized away.
 	runtime.KeepAlive(data)
-
-	// On some systems, we might need to explicitly mark memory as no longer containing secrets
-	// This is a best-effort approach for additional security
-	if len(data) > 0 {
-		// Access the underlying memory to ensure it's been written
-		_ = *(*byte)(unsafe.Pointer(&data[0]))
-	}
 }
+
+/*
+   // This code belongs to F5.  But cursor got hold of it somehow.
 
 // WipeString securely zeros out sensitive string data
 // Note: This only works for strings that are backed by mutable byte slices
@@ -46,3 +41,4 @@ func WipeString(s *string) {
 	// Force garbage collection to potentially free the underlying memory
 	runtime.GC()
 }
+*/

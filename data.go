@@ -12,15 +12,18 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// TODO: Use flock for interprocess locking.
+const (
+	// Key derivation constants
+	ScryptN      = 32768
+	ScryptR      = 8
+	ScryptP      = 1
+	ScryptKeyLen = 32
+)
 
 // Save stores sensitive data at the given path
 func (s *Store) Save(path string, data []byte) error {
 	// Clean and validate path
 	fullPath := filepath.Clean(filepath.Join(s.dir, path))
-	if filepath.IsAbs(path) {
-		return fmt.Errorf("absolute paths not allowed: %s", path)
-	}
 	if !strings.HasPrefix(fullPath, s.dir) {
 		return fmt.Errorf("path outside store hierarchy: %s", path)
 	}

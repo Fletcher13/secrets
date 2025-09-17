@@ -171,7 +171,7 @@ func (s *Store) reencryptFile(relPath string, oldKey, newKey []byte) error {
 	}
 
 	// Write back to file
-	return os.WriteFile(fullPath, newEncryptedData, 0600)
+	return os.WriteFile(fullPath, newEncryptedData, s.filePerm)
 }
 
 // decryptDataWithKey decrypts data using a specific key

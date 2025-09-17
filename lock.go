@@ -16,11 +16,11 @@ type fileLock struct {
 // This call is blocking, so if the lock is held, the function will wait
 // until it has been released.  The containing directory is created if
 // needed. The returned lock must be released by calling unlock().
-func lockExclusive(path string) (*fileLock, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+func (s *Store) lockExclusive(path string) (*fileLock, error) {
+	if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open lock file: %w", err)
 	}
@@ -35,8 +35,8 @@ func lockExclusive(path string) (*fileLock, error) {
 // must exist.  This call is blocking, so if the lock is held, the
 // function will wait until it has been released.  The returned lock
 // must be released by calling unlock().
-func lockShared(path string) (*fileLock, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY, 0600)
+func (s *Store) lockShared(path string) (*fileLock, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file for shared lock: %w", err)
 	}
@@ -47,15 +47,16 @@ func lockShared(path string) (*fileLock, error) {
 	return &fileLock{f: f}, nil
 }
 
+/*
 // LockExclusiveNB acquires an exclusive lock on the given file path.
 // This call is non-blocking, so if the lock is held, an error will be
 // returned.  The containing directory is created if needed. The
 // returned lock must be released by calling unlock().
-func LockExclusiveNB(path string) (*fileLock, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+func (s *Store) LockExclusiveNB(path string) (*fileLock, error) {
+	if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open lock file: %w", err)
 	}
@@ -70,8 +71,8 @@ func LockExclusiveNB(path string) (*fileLock, error) {
 // must exist.  This call is non-blocking, so if the lock is held, an
 // error will be returned.  The returned lock must be released by
 // calling unlock().
-func LockSharedNB(path string) (*fileLock, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY, 0600)
+func (s *Store) LockSharedNB(path string) (*fileLock, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file for shared lock: %w", err)
 	}
@@ -81,6 +82,7 @@ func LockSharedNB(path string) (*fileLock, error) {
 	}
 	return &fileLock{f: f}, nil
 }
+*/
 
 // unlock releases the lock and closes the file descriptor.
 func (l *fileLock) unlock() {

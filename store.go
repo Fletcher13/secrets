@@ -25,8 +25,8 @@ type Store struct {
 	primaryKey      []byte
 	currentKey      []byte
 	currentKeyIndex uint8
-	dirPerm         uint
-	filePerm        uint
+	dirPerm         os.FileMode
+	filePerm        os.FileMode
 	mutex           sync.RWMutex
 	recoveryCh      chan struct{}
 	stopRecovery    chan struct{}
@@ -47,94 +47,50 @@ type DataFile struct {
 
 // TODO: Ensure keys cannot be written to swap or core files.
 
-// CreateStore creates a new Store
-func CreateStore(dirpath string, pass []byte) (*Store, error) {
+// NewStore creates a new Store object, either opening an existing
+// on-disk store at dirpath, or creating a new store at dirpath.
+func NewStore(dirpath string, pass []byte) (*Store, error) {
 	// TODO: if len(key) == 0 { Use TPM2.0 sealed key }
-	if len(pass) < 32 {
+	if len(pass) != 32 {
 		// TODO: Use PBKDF2 to generate the key from any password.
-		return nil, fmt.Errorf("key must be at least 32 bytes long")
+		return nil, fmt.Errorf("key must be exactly 32 bytes long")
 	}
 
-	// Return error if directory exists and is not empty.
-	stat, err := os.Stat(dirpath)
-	if err == nil {
-		if stat.IsDir() != true {
-			return nil, fmt.Errorf("%s exists but is not a directory",
-				dirpath)
-		}
-		dirFiles, err := os.ReadDir(dirpath)
-		if err != nil || dirFiles != 2 {
-			return nil, fmt.Errorf("%s is not empty", dirpath)
-		}
-	} else if err.Is() != ErrDoesNotExist {
-		return nil, fmt.Errorf("error accessing%s: %w", err)
+	storePath, err := filepath.Abs(dirpath)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing directory %s: %w", dirpath, err)
 	}
 
-	// Create keys directory, which will auto-create store dir if it
-	// does not already exist.
-	keysDir := filepath.Join(dirpath, KeysDir)
-	if err := os.MkdirAll(keysDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create keys directory: %v", err)
-	}
-
-	// Initialize new store
-	store := &Store{
-		dir:          dirpath,
-		primaryKey:   make([]byte, len(key)),
-	}
-	copy(store.primaryKey, key)
-
-	// Generate initial key
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return fmt.Errorf("failed to generate key: %w", err)
-	}
-
-	// Encrypt and save key0
-	if err := store.saveKey(0, key); err != nil {
-		return fmt.Errorf("failed to save key0: %w", err)
-	}
-
-	// Set current key
-	s.currentKey = key
-	s.currentKeyIndex = 0
-
-	// Save current key index
-	if err := s.saveCurrentKeyIndex(); err != nil {
-		return nil, fmt.Errorf("failed to initialize store: %v", err)
-	}
-
-	// Open existing store
-	return OpenStore(dirpath, key)
-}
-
-// OpenStore opens an existing Store
-func OpenStore(dirpath string, key []byte) (*Store, error) {
-	// TODO: if len(key) == 0 { Use TPM2.0 sealed key }
-	if len(key) < 32 {
-		// TODO: Use PBKDF2 to generate the key from any password.
-		return nil, fmt.Errorf("key must be at least 32 bytes long")
+	isNewStore, err := checkNewStore(storePath)
+	if err != nil {
+		return nil, err
 	}
 
 	store := &Store{
-		dir:          dirpath,
-		primaryKey:   make([]byte, len(key)),
+		dir:          storePath,
+		primaryKey:   make([]byte, 32),
 		recoveryCh:   make(chan struct{}, 1),
 		stopRecovery: make(chan struct{}),
 	}
-	copy(store.primaryKey, key)
+	// TODO: Use PBKDF2 instead of copy().
+	copy(store.primaryKey, pass)
 
-	keysDir := filepath.Join(dirpath, KeysDir)
-	currentKeyPath := filepath.Join(dirpath, CurrentKeyFile)
-	if _, err := os.Stat(currentKeyPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("directory %s is not a secrets store", dirpath)
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to read current key file: %v", err)
+	if isNewStore {
+		err = store.createNewStore()
+	} else {
+		err = store.loadCurrentKey()
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	if err := store.loadCurrentKey(); err != nil {
-		return nil, fmt.Errorf("failed to load current key: %v", err)
+	stat, err := os.Stat(store.dir)
+	if err != nil {
+		// This should never fail.
+		return nil, err
 	}
+	store.dirPerm = stat.Mode() & os.ModePerm
+	store.filePerm = store.dirPerm & 0666 // Remove execute bit
 
 	// Start recovery process if needed
 	go store.recoveryProcess()
@@ -157,12 +113,77 @@ func (s *Store) Close() error {
 	return nil
 }
 
+// Check if this is an existing store or not.
+func checkNewStore(storePath string) (bool, error) {
+	keysPath := filepath.Join(storePath, KeysDir)
+
+	stat, err := os.Stat(storePath)
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("error accessing %s: %w", storePath, err)
+	}
+	if os.IsNotExist(err) {
+		return true, nil
+	} else if !stat.IsDir() {
+		return false, fmt.Errorf("%s is not a directory: %w", storePath, err)
+	} else {
+		// Directory exists, check if it's a valid store
+		stat, err = os.Stat(keysPath)
+		if os.IsNotExist(err) {
+			// No keys directory, ensure dir is empty.
+			dirFiles, err := os.ReadDir(storePath)
+			if err != nil || len(dirFiles) != 0 {
+				return false, fmt.Errorf("%s is not empty", storePath)
+			}
+			return true, nil
+		} else if err != nil {
+			return false, fmt.Errorf("error accessing %s: %w", keysPath, err)
+		} else if !stat.IsDir() {
+			return false, fmt.Errorf("%s is not a valid store", keysPath)
+		}
+		return false, nil
+	}
+}
+
+func (s *Store) createNewStore() error {
+	// Create keys directory, which will auto-create store dir if it
+	// does not already exist.
+	s.dirPerm = 0700
+	s.filePerm = 0600
+
+	keysPath := filepath.Join(s.dir, KeysDir)
+	if err := os.MkdirAll(keysPath, s.dirPerm); err != nil {
+		return fmt.Errorf("failed to create keys directory: %w", err)
+	}
+
+	// Generate initial key
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("failed to generate key: %w", err)
+	}
+
+	// Encrypt and save key0
+	if err := s.saveKey(0, key); err != nil {
+		return fmt.Errorf("failed to save key0: %w", err)
+	}
+
+	// Set current key
+	s.currentKey = key
+	s.currentKeyIndex = 0
+
+	// Save current key index
+	if err := s.saveCurrentKeyIndex(); err != nil {
+		return fmt.Errorf("failed to initialize store: %w", err)
+	}
+
+	return nil
+}
+
 // loadCurrentKey loads the current encryption key
 func (s *Store) loadCurrentKey() error {
 	// Read current key index
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
 
-	data, err := readFile(currentKeyPath)
+	data, err := s.readFile(currentKeyPath)
 	if err != nil {
 		return fmt.Errorf("failed to read current key file: %w", err)
 	}
@@ -187,7 +208,7 @@ func (s *Store) loadCurrentKey() error {
 func (s *Store) saveCurrentKeyIndex() error {
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
 
-	return writeFile(currentKeyPath, []byte{s.currentKeyIndex}, 0600)
+	return s.writeFile(currentKeyPath, []byte{s.currentKeyIndex}, s.filePerm)
 }
 
 // saveKey encrypts and saves a key
@@ -222,14 +243,14 @@ func (s *Store) saveKey(index uint8, key []byte) error {
 	copy(data[1:], nonce)
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
-	return writeFile(keyPath, data, 0600)
+	return s.writeFile(keyPath, data, s.filePerm)
 }
 
 // loadKey loads and decrypts a key
 func (s *Store) loadKey(index uint8) ([]byte, error) {
 	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
 
-	data, err := readFile(keyPath)
+	data, err := s.readFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}

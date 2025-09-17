@@ -38,3 +38,4 @@ go.work.sum
 
 # Test files
 test_*
+example_secret_store

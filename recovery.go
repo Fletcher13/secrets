@@ -143,7 +143,7 @@ func (s *Store) recoverFile(relPath string, currentKeyIndex uint8, currentKey []
 	}
 
 	// Write back to file
-	return os.WriteFile(fullPath, newEncryptedData, 0600)
+	return os.WriteFile(fullPath, newEncryptedData, s.filePerm)
 }
 
 // ValidateStore checks the integrity of the store

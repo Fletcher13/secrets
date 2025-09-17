@@ -11,7 +11,7 @@ import (
 func main() {
 	// Example: Use a simple key for demonstration. In a real application,
 	// derive this securely (e.g., from a password using PBKDF2).
-	encryptionKey := []byte("a-very-secret-key-that-is-at-least-32-bytes-long")
+	encryptionKey := []byte("a-very-secret-key-32-bytes-long.")
 
 	// Create a temporary directory for the secret store
 	dir := "example_secret_store"

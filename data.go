@@ -30,7 +30,7 @@ func (s *Store) Save(path string, data []byte) error {
 
 	// Create directory structure if needed
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, s.dirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -40,7 +40,7 @@ func (s *Store) Save(path string, data []byte) error {
 		return fmt.Errorf("failed to encrypt data: %w", err)
 	}
 
-	return writeFile(fullPath, encryptedData, 0600)
+	return s.writeFile(fullPath, encryptedData, s.filePerm)
 }
 
 // Load retrieves sensitive data from the given path
@@ -52,18 +52,18 @@ func (s *Store) Load(path string) ([]byte, error) {
 	}
 
 	// Read encrypted data
-	encryptedData, err := readFile(fullPath)
+	encryptedData, err := s.readFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("secret not found: %s", path)
 		}
-		return nil, fmt.Errorf("failed to read file: %s", err.Error())
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	// Decrypt data
 	data, err := s.decryptData(encryptedData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt data: %s", err.Error())
+		return nil, fmt.Errorf("failed to decrypt data: %w", err)
 	}
 
 	return data, nil
@@ -90,7 +90,7 @@ func (s *Store) Delete(path string) error {
 	}
 
 	// Exclusive lock before delete
-	lk, err := lockExclusive(fullPath)
+	lk, err := s.lockExclusive(fullPath)
 	if err != nil {
 		return err
 	}

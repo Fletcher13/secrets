@@ -8,8 +8,8 @@ import (
 // readFile acquires a shared lock on the file to be read, reads the file,
 // releases the lock, then returns the data in the file as a byte slice.
 // This minimizes the amount of time spent with the lock held.
-func readFile(path string) ([]byte, error) {
-	lk, err := lockShared(path)
+func (s *Store) readFile(path string) ([]byte, error) {
+	lk, err := s.lockShared(path)
 	if err != nil {
 		return nil, err
 	}
@@ -17,7 +17,7 @@ func readFile(path string) ([]byte, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %w", err)
+		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
 
 	return data, nil
@@ -27,8 +27,8 @@ func readFile(path string) ([]byte, error) {
 // lock on the file to be written, writes the data to the file, then
 // releases the lock.  This minimizes the amount of time spent with the
 // lock held.
-func writeFile(path string, data []byte, perm os.FileMode) (error) {
-	lk, err := lockExclusive(path)
+func (s *Store) writeFile(path string, data []byte, perm os.FileMode) (error) {
+	lk, err := s.lockExclusive(path)
 	if err != nil {
 		return err
 	}

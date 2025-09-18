@@ -28,6 +28,9 @@ func newTestStore(t *testing.T, dir string) *Store {
 
 // Helper to clean up after a test is run
 func testCleanup(t *testing.T, store *Store) {
+	if store == nil {
+		return
+	}
 	err := store.Close()
 	assert.NoError(t, err)
 	err = os.RemoveAll(store.dir)

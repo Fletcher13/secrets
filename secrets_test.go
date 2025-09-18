@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Helper to create a new secrets store
@@ -16,9 +18,7 @@ func newTestStore(t *testing.T, dir string) *Store {
 		key[i] = byte(i)
 	}
 	st, err := NewStore(dir, key)
-	if err != nil {
-		t.Fatalf("NewStore failed: %v", err)
-	}
+	assert.NoError(t, err)
 	t.Cleanup(func() {
 		_ = st.Close()
 		_ = os.RemoveAll(dir)
@@ -29,24 +29,18 @@ func newTestStore(t *testing.T, dir string) *Store {
 // Helper to clean up after a test is run
 func testCleanup(t *testing.T, store *Store) {
 	err := store.Close()
-	if err != nil {
-		t.Fatalf("Failed to load data: %v", err)
-	}
+	assert.NoError(t, err)
 	err = os.RemoveAll(store.dir)
-	if err != nil {
-		t.Fatalf("Failed to load data: %v", err)
-	}
+	assert.NoError(t, err)
 }
 
 // Helper to write arbitrary bytes
 func mustWrite(t *testing.T, p string, b []byte) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(p, b, 0600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	err := os.MkdirAll(filepath.Dir(p), 0700)
+	assert.NoError(t, err)
+	err = os.WriteFile(p, b, 0600)
+	assert.NoError(t, err)
 }
 
 func TestDeriveKeyFromPassword(t *testing.T) {
@@ -57,44 +51,24 @@ func TestDeriveKeyFromPassword(t *testing.T) {
 	}
 
 	key, err := DeriveKeyFromPassword(password, salt)
-	if err != nil {
-		t.Fatalf("Failed to derive key: %v", err)
-	}
-
-	if len(key) != 32 {
-		t.Errorf("Expected key length 32, got %d", len(key))
-	}
+	assert.NoError(t, err)
+	assert.Len(t, key, 32)
 
 	// Same password and salt should produce same key
 	key2, err := DeriveKeyFromPassword(password, salt)
-	if err != nil {
-		t.Fatalf("Failed to derive key again: %v", err)
-	}
-
-	if string(key) != string(key2) {
-		t.Error("Same password and salt should produce same key")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, key, key2)
 }
 
 func TestGenerateSalt(t *testing.T) {
 	salt, err := GenerateSalt()
-	if err != nil {
-		t.Fatalf("Failed to generate salt: %v", err)
-	}
-
-	if len(salt) != 32 {
-		t.Errorf("Expected salt length 32, got %d", len(salt))
-	}
+	assert.NoError(t, err)
+	assert.Len(t, salt, 32)
 
 	// Generate another salt and ensure they're different
 	salt2, err := GenerateSalt()
-	if err != nil {
-		t.Fatalf("Failed to generate second salt: %v", err)
-	}
-
-	if string(salt) == string(salt2) {
-		t.Error("Generated salts should be different")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, salt, salt2)
 }
 
 func TestPathValidation(t *testing.T) {
@@ -104,9 +78,7 @@ func TestPathValidation(t *testing.T) {
 	}
 
 	store, err := NewStore("test_path_validation", key)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
+	assert.NoError(t, err)
 	defer testCleanup(t, store)
 
 	// Test invalid paths
@@ -119,13 +91,9 @@ func TestPathValidation(t *testing.T) {
 
 	for _, invalidPath := range invalidPaths {
 		err = store.Save(invalidPath, []byte("data"))
-		if err == nil {
-			t.Errorf("Expected error for invalid path %s", invalidPath)
-		}
+		assert.Error(t, err, "Expected error for invalid path %s", invalidPath)
 		_, err = store.Load(invalidPath)
-		if err == nil {
-			t.Errorf("Expected error for invalid path %s", invalidPath)
-		}
+		assert.Error(t, err, "Expected error for invalid path %s", invalidPath)
 	}
 }
 
@@ -135,15 +103,13 @@ func TestLoadCurrentKey_Errors(t *testing.T) {
 
 	// Bad length in currentkey
 	mustWrite(t, filepath.Join(dir, CurrentKeyFile), []byte{0x01, 0x02})
-	if err := st.loadCurrentKey(); err == nil {
-		t.Fatal("expected error for invalid current key file format")
-	}
+	err := st.loadCurrentKey()
+	assert.Error(t, err, "expected error for invalid current key file format")
 
 	// Missing referenced key file
 	mustWrite(t, filepath.Join(dir, CurrentKeyFile), []byte{200})
-	if err := st.loadCurrentKey(); err == nil {
-		t.Fatal("expected error when referenced key file is missing")
-	}
+	err = st.loadCurrentKey()
+	assert.Error(t, err, "expected error when referenced key file is missing")
 }
 
 func TestEncryptDecryptData_KeyMismatch(t *testing.T) {

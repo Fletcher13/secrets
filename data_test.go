@@ -3,6 +3,8 @@ package secrets
 import (
 	"crypto/rand"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSaveAndLoad(t *testing.T) {
@@ -12,9 +14,7 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 
 	store, err := NewStore("test_save_load", key)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
+	assert.NoError(t, err)
 	defer testCleanup(t, store)
 
 	// Test saving and loading data
@@ -22,18 +22,11 @@ func TestSaveAndLoad(t *testing.T) {
 	path := "test/secret"
 
 	err = store.Save(path, testData)
-	if err != nil {
-		t.Fatalf("Failed to save data: %v", err)
-	}
+	assert.NoError(t, err)
 
 	loadedData, err := store.Load(path)
-	if err != nil {
-		t.Fatalf("Failed to load data: %v", err)
-	}
-
-	if string(loadedData) != string(testData) {
-		t.Errorf("Expected %s, got %s", string(testData), string(loadedData))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, testData, loadedData)
 }
 
 func TestList(t *testing.T) {
@@ -43,9 +36,7 @@ func TestList(t *testing.T) {
 	}
 
 	store, err := NewStore("test_list", key)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
+	assert.NoError(t, err)
 	defer testCleanup(t, store)
 
 	// Save multiple secrets
@@ -57,33 +48,17 @@ func TestList(t *testing.T) {
 
 	for path, data := range secrets {
 		err = store.Save(path, data)
-		if err != nil {
-			t.Fatalf("Failed to save %s: %v", path, err)
-		}
+		assert.NoError(t, err, "Failed to save %s", path)
 	}
 
 	// List secrets
 	list, err := store.list()
-	if err != nil {
-		t.Fatalf("Failed to list secrets: %v", err)
-	}
-
-	if len(list) != len(secrets) {
-		t.Errorf("Expected %d secrets, got %d", len(secrets), len(list))
-	}
+	assert.NoError(t, err)
+	assert.Len(t, list, len(secrets))
 
 	// Check that all expected secrets are in the list
 	for path := range secrets {
-		found := false
-		for _, listedPath := range list {
-			if listedPath == path {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Secret %s not found in list", path)
-		}
+		assert.Contains(t, list, path, "Secret %s not found in list", path)
 	}
 }
 
@@ -94,39 +69,27 @@ func TestDelete(t *testing.T) {
 	}
 
 	store, err := NewStore("test_delete", key)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
+	assert.NoError(t, err)
 	defer testCleanup(t, store)
 
 	// Save a secret
 	path := "test/secret"
 	data := []byte("test_data")
 	err = store.Save(path, data)
-	if err != nil {
-		t.Fatalf("Failed to save secret: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Verify it exists
 	loadedData, err := store.Load(path)
-	if err != nil {
-		t.Fatalf("Failed to load secret: %v", err)
-	}
-	if string(loadedData) != string(data) {
-		t.Error("Secret data mismatch")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, data, loadedData)
 
 	// Delete the secret
 	err = store.Delete(path)
-	if err != nil {
-		t.Fatalf("Failed to delete secret: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Verify it's gone
 	_, err = store.Load(path)
-	if err == nil {
-		t.Error("Expected error when loading deleted secret")
-	}
+	assert.Error(t, err, "Expected error when loading deleted secret")
 }
 
 // Benchmark tests for DeriveKeyFromPassword
@@ -136,22 +99,16 @@ func BenchmarkDeriveKeyFromPassword(b *testing.B) {
 	salt := make([]byte, 32)
 
 	_, err := rand.Read(password)
-	if err != nil {
-		b.Fatalf("Failed to generate password: %v", err)
-	}
+	assert.NoError(b, err)
 
 	_, err = rand.Read(salt)
-	if err != nil {
-		b.Fatalf("Failed to generate salt: %v", err)
-	}
+	assert.NoError(b, err)
 
 	b.ResetTimer() // Don't include setup time in benchmark
 
 	for i := 0; i < b.N; i++ {
 		_, err := DeriveKeyFromPassword(password, salt)
-		if err != nil {
-			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
-		}
+		assert.NoError(b, err)
 	}
 }
 
@@ -165,9 +122,7 @@ func BenchmarkDeriveKeyFromPassword_ShortPassword(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, err := DeriveKeyFromPassword(password, salt)
-		if err != nil {
-			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
-		}
+		assert.NoError(b, err)
 	}
 }
 
@@ -181,9 +136,7 @@ func BenchmarkDeriveKeyFromPassword_LongPassword(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, err := DeriveKeyFromPassword(password, salt)
-		if err != nil {
-			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
-		}
+		assert.NoError(b, err)
 	}
 }
 
@@ -197,9 +150,7 @@ func BenchmarkDeriveKeyFromPassword_MinimumSalt(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, err := DeriveKeyFromPassword(password, salt)
-		if err != nil {
-			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
-		}
+		assert.NoError(b, err)
 	}
 }
 
@@ -212,8 +163,6 @@ func BenchmarkDeriveKeyFromPassword_LargeSalt(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, err := DeriveKeyFromPassword(password, salt)
-		if err != nil {
-			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
-		}
+		assert.NoError(b, err)
 	}
 }

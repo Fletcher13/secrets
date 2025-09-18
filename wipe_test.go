@@ -2,6 +2,8 @@ package secrets
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWipe(t *testing.T) {
@@ -12,7 +14,5 @@ func TestWipe(t *testing.T) {
 	Wipe(data)
 
 	// After wiping, the data should be different (either zeros or random)
-	if string(data) == string(original) {
-		t.Error("Data should be wiped and different from original")
-	}
+	assert.NotEqual(t, original, data, "Data should be wiped and different from original")
 }

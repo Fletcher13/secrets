@@ -2,6 +2,8 @@ package secrets
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestKeyRotation(t *testing.T) {
@@ -11,47 +13,31 @@ func TestKeyRotation(t *testing.T) {
 	}
 
 	store, err := NewStore("test_rotation", key)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
+	assert.NoError(t, err)
 	defer testCleanup(t, store)
 
 	// Save some data
 	testData := []byte("test_rotation_data")
 	path := "test/secret"
 	err = store.Save(path, testData)
-	if err != nil {
-		t.Fatalf("Failed to save data: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Get initial key index
 	info, err := store.GetStoreInfo()
-	if err != nil {
-		t.Fatalf("Failed to get store info: %v", err)
-	}
+	assert.NoError(t, err)
 	initialKeyIndex := info.CurrentKeyIndex
 
 	// Rotate keys
 	err = store.Rotate()
-	if err != nil {
-		t.Fatalf("Failed to rotate keys: %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Verify data is still accessible
 	loadedData, err := store.Load(path)
-	if err != nil {
-		t.Fatalf("Failed to load data after rotation: %v", err)
-	}
-	if string(loadedData) != string(testData) {
-		t.Error("Data mismatch after rotation")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, testData, loadedData)
 
 	// Verify key index changed
 	info, err = store.GetStoreInfo()
-	if err != nil {
-		t.Fatalf("Failed to get store info after rotation: %v", err)
-	}
-	if info.CurrentKeyIndex == initialKeyIndex {
-		t.Error("Key index should have changed after rotation")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, initialKeyIndex, info.CurrentKeyIndex, "Key index should have changed after rotation")
 }

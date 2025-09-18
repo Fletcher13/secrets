@@ -2,14 +2,14 @@ package secrets
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewStore(t *testing.T) {
 	// Test with invalid key length
 	_, err := NewStore("test_dir", []byte("short"))
-	if err == nil {
-		t.Error("Expected error for short key, got nil")
-	}
+	assert.Error(t, err, "Expected error for short key")
 
 	// Test with valid key
 	key := make([]byte, 32)
@@ -18,13 +18,7 @@ func TestNewStore(t *testing.T) {
 	}
 
 	store, err := NewStore("test_dir", key)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
+	assert.NoError(t, err)
 	defer testCleanup(t, store)
-
-	if store == nil {
-		t.Error("Store should not be nil")
-	}
+	assert.NotNil(t, store)
 }
-

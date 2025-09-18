@@ -9,15 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/crypto/scrypt"
+	"golang.org/x/crypto/argon2"
 )
 
-var (
-	// Key derivation constants
-	ScryptN      = 32768
-	ScryptR      = 8
-	ScryptP      = 1
-	ScryptKeyLen = 32
+const (
+	// Argon2id key derivation constants
+	// These parameters provide strong security while being reasonably fast
+	Argon2Time    = 3         // Number of iterations
+	Argon2Memory  = 64 * 1024 // 64 MB memory usage
+	Argon2Threads = 4         // Number of threads
+	Argon2KeyLen  = 32        // Output key length
 )
 
 // Save stores sensitive data at the given path
@@ -203,17 +204,16 @@ func (s *Store) decryptData(encryptedData []byte) ([]byte, error) {
 	return data, nil
 }
 
-// DeriveKeyFromPassword derives a key from a password using scrypt
-// scrypt is a more secure version of PBKDF2.
+// DeriveKeyFromPassword derives a key from a password using Argon2id
+// Argon2id is the recommended password hashing function by OWASP and provides
+// strong resistance against both side-channel and timing attacks.
 func DeriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
 	if len(salt) < 16 {
 		return nil, fmt.Errorf("salt must be at least 16 bytes")
 	}
 
-	key, err := scrypt.Key(password, salt, ScryptN, ScryptR, ScryptP, ScryptKeyLen)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive key: %w", err)
-	}
+	// Use Argon2id for key derivation
+	key := argon2.IDKey(password, salt, Argon2Time, Argon2Memory, Argon2Threads, Argon2KeyLen)
 
 	return key, nil
 }

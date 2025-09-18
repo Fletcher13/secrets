@@ -9,9 +9,9 @@ import (
 )
 
 func main() {
-	// Example: Use a simple key for demonstration. In a real application,
-	// derive this securely (e.g., from a password using PBKDF2).
-	encryptionKey := []byte("a-very-secret-key-32-bytes-long.")
+	// Example: Use a simple password for demonstration. In a real
+	// application, obtain the password from a secure source.
+	password := []byte("secret-password")
 
 	// Create a temporary directory for the secret store
 	dir := "example_secret_store"
@@ -22,7 +22,7 @@ func main() {
 		log.Fatalf("Error ensuring store directory does not exist: %v", err)
 	}
 
-	store, err := secrets.NewStore(dir, encryptionKey)
+	store, err := secrets.NewStore(dir, password)
 	if err != nil {
 		log.Fatalf("Error creating/opening store: %v", err)
 	}

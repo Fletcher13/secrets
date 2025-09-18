@@ -41,15 +41,15 @@ To create a new `secrets.Store` or open an existing one, use
 
 The `password` parameter is crucial for decrypting the store's internal
 keys. This password should *not* be saved with the secrets store, as that
-would defeat the purpose of encrypting the data.
+would defeat the purpose of encrypting the data.  The password is then hashed with Argon2id to generate the key used to encrypt/decrypt the key(s) used to encrypt/decrypt the sensitive data.
 
-If `password` is nil, and a new store will be created, a random key will
-be created and it will attempt to use TPM2.0 to seal that key, and save
-the sealed key with the store in a file called `sealedkey` in the
-`.secretskeys` directory.  If `password` is nil and this opens an
-existing store, it will look for the `sealedkey` file and attempt to
-unseal it with TPM2.0.  If that does not work, an error will be
-returned.
+TODO: If `password` is nil or zero length, and a new store will be
+created, a random key will be created and it will attempt to use TPM2.0
+to seal that key, and save the sealed key with the store in a file
+called `sealedkey` in the `.secretskeys` directory.  If `password` is
+nil and this opens an existing store, it will look for the `sealedkey`
+file and attempt to unseal it with TPM2.0.  If that does not work, an
+error will be returned.
 
 ### Zeroization
 
@@ -73,9 +73,9 @@ import (
 )
 
 func main() {
-	// Example: Use a simple key for demonstration. In a real application,
-	// derive this securely (e.g., from a password using PBKDF2).
-	encryptionKey := []byte("a-very-secret-key-that-is-at-least-32-bytes-long")
+	// Example: Use a simple password for demonstration. In a real
+	// application, obtain the password from a secure source.
+	password := []byte("secret-password")
 
 	// Create a temporary directory for the secret store
 	dir, err := ioutil.TempDir("", "secret_store")
@@ -85,7 +85,7 @@ func main() {
 	}
 	defer os.RemoveAll(dir) // Clean up the directory when done
 
-	store, err := secrets.NewStore(dir, encryptionKey)
+	store, err := secrets.NewStore(dir, password)
 	if err != nil {
 		fmt.Printf("Error creating/opening store: %v\n", err)
 		return

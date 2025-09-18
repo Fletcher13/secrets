@@ -15,8 +15,9 @@ const (
 	AlgorithmAES256GCM = 0
 
 	// File names
-	KeysDir        = ".secretskeys"
-	CurrentKeyFile = KeysDir + "/currentkey"
+	KeysDir         = ".secretskeys"
+	PrimarySaltFile = KeysDir + "/primarysalt"
+	CurrentKeyFile  = KeysDir + "/currentkey"
 )
 
 // Store represents a secure storage for sensitive data
@@ -49,11 +50,11 @@ type DataFile struct {
 
 // NewStore creates a new Store object, either opening an existing
 // on-disk store at dirpath, or creating a new store at dirpath.
-func NewStore(dirpath string, pass []byte) (*Store, error) {
-	// TODO: if len(key) == 0 { Use TPM2.0 sealed key }
-	if len(pass) != 32 {
+func NewStore(dirpath string, password []byte) (*Store, error) {
+	// TODO: if len(password) == 0 { Use TPM2.0 sealed key }
+	if len(password) == 0 {
 		// TODO: Use PBKDF2 to generate the key from any password.
-		return nil, fmt.Errorf("key must be exactly 32 bytes long")
+		return nil, fmt.Errorf("password must not be empty")
 	}
 
 	storePath, err := filepath.Abs(dirpath)
@@ -72,12 +73,14 @@ func NewStore(dirpath string, pass []byte) (*Store, error) {
 		recoveryCh:   make(chan struct{}, 1),
 		stopRecovery: make(chan struct{}),
 	}
-	// TODO: Use PBKDF2 instead of copy().
-	copy(store.primaryKey, pass)
 
 	if isNewStore {
-		err = store.createNewStore()
+		err = store.createNewStore(password) // password needed to set salt.
 	} else {
+		err = store.getPrimaryKey(password) // password needed to retrieve salt.
+		if err != nil {
+			return nil, err
+		}
 		err = store.loadCurrentKey()
 	}
 	if err != nil {
@@ -144,7 +147,7 @@ func checkNewStore(storePath string) (bool, error) {
 	}
 }
 
-func (s *Store) createNewStore() error {
+func (s *Store) createNewStore(password []byte) error {
 	// Create keys directory, which will auto-create store dir if it
 	// does not already exist.
 	s.dirPerm = 0700
@@ -153,6 +156,10 @@ func (s *Store) createNewStore() error {
 	keysPath := filepath.Join(s.dir, KeysDir)
 	if err := os.MkdirAll(keysPath, s.dirPerm); err != nil {
 		return fmt.Errorf("failed to create keys directory: %w", err)
+	}
+
+	if err := s.createPrimaryKey(password); err != nil {
+		return fmt.Errorf("failed to extract primary key from password")
 	}
 
 	// Generate initial key
@@ -175,6 +182,38 @@ func (s *Store) createNewStore() error {
 		return fmt.Errorf("failed to initialize store: %w", err)
 	}
 
+	return nil
+}
+
+func (s *Store) createPrimaryKey(password []byte) error {
+	// Generate salt, save it, and then get primaryKey with Argon2
+	salt, err := GenerateSalt()
+	if err != nil {
+		return fmt.Errorf("failed to generate random salt: %w", err)
+	}
+	primarySaltFile := filepath.Join(s.dir, PrimarySaltFile)
+	err = s.writeFile(primarySaltFile, salt)
+	if err != nil {
+		return fmt.Errorf("failed to write salt for key: %w", err)
+	}
+	s.primaryKey, err = DeriveKeyFromPassword(password, salt)
+	if err != nil {
+		return fmt.Errorf("failed to generate key: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) getPrimaryKey(password []byte) error {
+	// Read salt, then get primaryKey with Argon2
+	primarySaltFile := filepath.Join(s.dir, PrimarySaltFile)
+	salt, err := s.readFile(primarySaltFile)
+	if err != nil {
+		return fmt.Errorf("failed to read primary key salt: %w", err)
+	}
+	s.primaryKey, err = DeriveKeyFromPassword(password, salt)
+	if err != nil {
+		return fmt.Errorf("failed to generate key: %w", err)
+	}
 	return nil
 }
 
@@ -208,7 +247,7 @@ func (s *Store) loadCurrentKey() error {
 func (s *Store) saveCurrentKeyIndex() error {
 	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
 
-	return s.writeFile(currentKeyPath, []byte{s.currentKeyIndex}, s.filePerm)
+	return s.writeFile(currentKeyPath, []byte{s.currentKeyIndex})
 }
 
 // saveKey encrypts and saves a key
@@ -243,7 +282,7 @@ func (s *Store) saveKey(index uint8, key []byte) error {
 	copy(data[1:], nonce)
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
-	return s.writeFile(keyPath, data, s.filePerm)
+	return s.writeFile(keyPath, data)
 }
 
 // loadKey loads and decrypts a key

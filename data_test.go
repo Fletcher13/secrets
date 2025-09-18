@@ -116,7 +116,7 @@ func BenchmarkDeriveKeyFromPassword(b *testing.B) {
 func BenchmarkDeriveKeyFromPassword_ShortPassword(b *testing.B) {
 	password := []byte("short")
 	salt := make([]byte, 32)
-	rand.Read(salt)
+	_, _ = rand.Read(salt)
 
 	b.ResetTimer()
 
@@ -129,8 +129,8 @@ func BenchmarkDeriveKeyFromPassword_ShortPassword(b *testing.B) {
 func BenchmarkDeriveKeyFromPassword_LongPassword(b *testing.B) {
 	password := make([]byte, 1024) // 1KB password
 	salt := make([]byte, 32)
-	rand.Read(password)
-	rand.Read(salt)
+	_, _ = rand.Read(password)
+	_, _ = rand.Read(salt)
 
 	b.ResetTimer()
 
@@ -144,7 +144,7 @@ func BenchmarkDeriveKeyFromPassword_LongPassword(b *testing.B) {
 func BenchmarkDeriveKeyFromPassword_MinimumSalt(b *testing.B) {
 	password := []byte("test_password")
 	salt := make([]byte, 16) // Minimum required salt size
-	rand.Read(salt)
+	_, _ = rand.Read(salt)
 
 	b.ResetTimer()
 
@@ -157,7 +157,7 @@ func BenchmarkDeriveKeyFromPassword_MinimumSalt(b *testing.B) {
 func BenchmarkDeriveKeyFromPassword_LargeSalt(b *testing.B) {
 	password := []byte("test_password")
 	salt := make([]byte, 64) // Larger salt
-	rand.Read(salt)
+	_, _ = rand.Read(salt)
 
 	b.ResetTimer()
 

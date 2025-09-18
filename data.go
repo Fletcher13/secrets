@@ -41,7 +41,7 @@ func (s *Store) Save(path string, data []byte) error {
 		return fmt.Errorf("failed to encrypt data: %w", err)
 	}
 
-	return s.writeFile(fullPath, encryptedData, s.filePerm)
+	return s.writeFile(fullPath, encryptedData)
 }
 
 // Load retrieves sensitive data from the given path
@@ -208,8 +208,8 @@ func (s *Store) decryptData(encryptedData []byte) ([]byte, error) {
 // Argon2id is the recommended password hashing function by OWASP and provides
 // strong resistance against both side-channel and timing attacks.
 func DeriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
-	if len(salt) < 16 {
-		return nil, fmt.Errorf("salt must be at least 16 bytes")
+	if len(salt) < 32 {
+		return nil, fmt.Errorf("salt must be at least 32 bytes")
 	}
 
 	// Use Argon2id for key derivation

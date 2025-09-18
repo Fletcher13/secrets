@@ -27,12 +27,12 @@ func (s *Store) readFile(path string) ([]byte, error) {
 // lock on the file to be written, writes the data to the file, then
 // releases the lock.  This minimizes the amount of time spent with the
 // lock held.
-func (s *Store) writeFile(path string, data []byte, perm os.FileMode) (error) {
+func (s *Store) writeFile(path string, data []byte) (error) {
 	lk, err := s.lockExclusive(path)
 	if err != nil {
 		return err
 	}
 	defer lk.unlock()
 
-	return os.WriteFile(path, data, perm)
+	return os.WriteFile(path, data, s.filePerm)
 }

@@ -23,6 +23,7 @@ func main() {
 	}
 
 	store, err := secrets.NewStore(dir, password)
+	secrets.Wipe(password)
 	if err != nil {
 		log.Fatalf("Error creating/opening store: %v", err)
 	}
@@ -96,13 +97,13 @@ func main() {
 
 	// Demonstrate password-based key derivation
 	fmt.Println("\n=== Password-based Key Derivation Example ===")
-	password := []byte("my_secure_password")
+	pass := []byte("my_secure_password")
 	salt, err := secrets.GenerateSalt()
 	if err != nil {
 		log.Fatalf("Error generating salt: %v", err)
 	}
 
-	derivedKey, err := secrets.DeriveKeyFromPassword(password, salt)
+	derivedKey, err := secrets.DeriveKeyFromPassword(pass, salt)
 	if err != nil {
 		log.Fatalf("Error deriving key: %v", err)
 	}

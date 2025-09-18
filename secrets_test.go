@@ -32,7 +32,7 @@ func testCleanup(t *testing.T, store *Store) {
 	if err != nil {
 		t.Fatalf("Failed to load data: %v", err)
 	}
-	err = os.RemoveAll("test_list")
+	err = os.RemoveAll(store.dir)
 	if err != nil {
 		t.Fatalf("Failed to load data: %v", err)
 	}

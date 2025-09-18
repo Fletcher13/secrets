@@ -92,3 +92,4 @@ func (l *fileLock) unlock() {
 	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
 	_ = l.f.Close()
 }
+

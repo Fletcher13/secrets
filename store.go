@@ -16,7 +16,7 @@ const (
 
 	// File names
 	KeysDir        = ".secretskeys"
-	CurrentKeyFile = KeysDir + "currentkey"
+	CurrentKeyFile = KeysDir + "/currentkey"
 )
 
 // Store represents a secure storage for sensitive data

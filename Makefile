@@ -38,6 +38,11 @@ lint:
 	@echo "Linting code..."
 	golangci-lint run
 
+# Run benchmark
+bench:
+	@echo "Running benchmark tests..."
+	go test -bench=. ./...
+
 # Run all checks
 check: lint test
 

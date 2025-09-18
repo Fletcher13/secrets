@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"crypto/rand"
 	"testing"
 )
 
@@ -128,3 +129,91 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+// Benchmark tests for DeriveKeyFromPassword
+func BenchmarkDeriveKeyFromPassword(b *testing.B) {
+	// Generate a random password and salt for testing
+	password := make([]byte, 32)
+	salt := make([]byte, 32)
+
+	_, err := rand.Read(password)
+	if err != nil {
+		b.Fatalf("Failed to generate password: %v", err)
+	}
+
+	_, err = rand.Read(salt)
+	if err != nil {
+		b.Fatalf("Failed to generate salt: %v", err)
+	}
+
+	b.ResetTimer() // Don't include setup time in benchmark
+
+	for i := 0; i < b.N; i++ {
+		_, err := DeriveKeyFromPassword(password, salt)
+		if err != nil {
+			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
+		}
+	}
+}
+
+// Benchmark with different password lengths
+func BenchmarkDeriveKeyFromPassword_ShortPassword(b *testing.B) {
+	password := []byte("short")
+	salt := make([]byte, 32)
+	rand.Read(salt)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := DeriveKeyFromPassword(password, salt)
+		if err != nil {
+			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkDeriveKeyFromPassword_LongPassword(b *testing.B) {
+	password := make([]byte, 1024) // 1KB password
+	salt := make([]byte, 32)
+	rand.Read(password)
+	rand.Read(salt)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := DeriveKeyFromPassword(password, salt)
+		if err != nil {
+			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
+		}
+	}
+}
+
+// Benchmark with different salt sizes
+func BenchmarkDeriveKeyFromPassword_MinimumSalt(b *testing.B) {
+	password := []byte("test_password")
+	salt := make([]byte, 16) // Minimum required salt size
+	rand.Read(salt)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := DeriveKeyFromPassword(password, salt)
+		if err != nil {
+			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkDeriveKeyFromPassword_LargeSalt(b *testing.B) {
+	password := []byte("test_password")
+	salt := make([]byte, 64) // Larger salt
+	rand.Read(salt)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := DeriveKeyFromPassword(password, salt)
+		if err != nil {
+			b.Fatalf("DeriveKeyFromPassword failed: %v", err)
+		}
+	}
+}

@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-const (
+var (
 	// Key derivation constants
 	ScryptN      = 32768
 	ScryptR      = 8
@@ -204,6 +204,7 @@ func (s *Store) decryptData(encryptedData []byte) ([]byte, error) {
 }
 
 // DeriveKeyFromPassword derives a key from a password using scrypt
+// scrypt is a more secure version of PBKDF2.
 func DeriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
 	if len(salt) < 16 {
 		return nil, fmt.Errorf("salt must be at least 16 bytes")

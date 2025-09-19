@@ -123,28 +123,46 @@ func checkNewStore(storePath string) (bool, error) {
 	stat, err := os.Stat(storePath)
 	if err != nil && !os.IsNotExist(err) {
 		return false, fmt.Errorf("error accessing %s: %w", storePath, err)
-	}
-	if os.IsNotExist(err) {
+	} else if os.IsNotExist(err) {
 		return true, nil
 	} else if !stat.IsDir() {
 		return false, fmt.Errorf("%s is not a directory: %w", storePath, err)
-	} else {
-		// Directory exists, check if it's a valid store
-		stat, err = os.Stat(keysPath)
-		if os.IsNotExist(err) {
-			// No keys directory, ensure dir is empty.
-			dirFiles, err := os.ReadDir(storePath)
-			if err != nil || len(dirFiles) != 0 {
-				return false, fmt.Errorf("%s is not empty", storePath)
-			}
-			return true, nil
-		} else if err != nil {
-			return false, fmt.Errorf("error accessing %s: %w", keysPath, err)
-		} else if !stat.IsDir() {
-			return false, fmt.Errorf("%s is not a valid store", keysPath)
-		}
-		return false, nil
 	}
+
+	// Directory exists, check if it's a valid store
+	stat, err = os.Stat(keysPath)
+	if os.IsNotExist(err) {
+		// No keys directory, ensure dir is empty.
+		dirFiles, err := os.ReadDir(storePath)
+		if err != nil || len(dirFiles) != 0 {
+			return false, fmt.Errorf("%s is not empty", storePath)
+		}
+		return true, nil
+	} else if err != nil {
+		return false, fmt.Errorf("error accessing %s: %w", keysPath, err)
+	} else if !stat.IsDir() {
+		return false, fmt.Errorf("%s is not a directory", storePath)
+	}
+
+	// Check that primary key salt, currentkey, and keyN are all there.
+	_, err = os.Stat(filepath.Join(storePath, PrimarySaltFile))
+	if err != nil {
+		return false, fmt.Errorf("%s is not a valid store, no salt file",
+			storePath)
+	}
+	data, err := os.ReadFile(filepath.Join(storePath, CurrentKeyFile))
+	if err != nil || len(data) != 1 {
+		return false, fmt.Errorf("%s is not a valid store, no current key file",
+			storePath)
+	}
+	keyPath := filepath.Join(storePath, KeysDir, fmt.Sprintf("key%d", data[0]))
+	_, err = os.Stat(keyPath)
+	if err != nil {
+		return false, fmt.Errorf("%s is not a valid store, no key file",
+			storePath)
+	}
+
+	return false, nil
 }
 
 func (s *Store) createNewStore(password []byte) error {

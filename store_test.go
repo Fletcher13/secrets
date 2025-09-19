@@ -29,6 +29,6 @@ func TestNewStore(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Try to open existing store with wrong password
-	store, err = NewStore("test_dir", []byte("bad_password"))
+	_, err = NewStore("test_dir", []byte("bad_password"))
 	assert.Error(t, err)
 }

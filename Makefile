@@ -3,24 +3,24 @@
 # Build the library
 build:
 	@echo "Building secrets library..."
-	@go build -v ./...
+	go build -v ./...
 
 # Run tests
 test:
 	@echo "Running tests..."
-	@go test -v --cover ./...
+	go test -v --cover ./...
 
 # Run example
 example:
 	@echo "Running example..."
-	@go run example/main.go
+	go run example/main.go
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
-	@rm -rf test_*
-	@rm -rf example_secret_store
-	@go clean
+	rm -rf test_*
+	rm -rf example_secret_store
+	go clean
 
 # Download dependencies to vendor directory
 vendor:
@@ -43,11 +43,8 @@ bench:
 	@echo "Running benchmark tests..."
 	go test -bench=. ./...
 
-# Run all checks
-check: lint test
-
 # Build everything
-all: deps vendor build test
+all: build lint test
 
 # Help
 help:
@@ -58,8 +55,7 @@ help:
 	@echo "  clean    - Clean build artifacts"
 	@echo "  vendor   - Download dependencies to vendor"
 	@echo "  deps     - Install dependencies"
-	@echo "  fmt      - Format code"
 	@echo "  lint     - Lint code"
-	@echo "  check    - Run format, lint, and test"
+	@echo "  bench    - Run benchmarks"
 	@echo "  all      - Run all checks and build"
 	@echo "  help     - Show this help"

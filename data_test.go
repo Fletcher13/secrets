@@ -59,7 +59,36 @@ func TestDelete(t *testing.T) {
 	assert.Error(t, err, "Expected error when loading deleted secret")
 }
 
-// Benchmark tests for DeriveKeyFromPassword
+func TestDeriveKeyFromPassword(t *testing.T) {
+	password := []byte("test_password")
+	salt := make([]byte, 32)
+	for i := range salt {
+		salt[i] = byte(i)
+	}
+
+	key, err := deriveKeyFromPassword(password, salt)
+	assert.NoError(t, err)
+	assert.Len(t, key, 32)
+
+	// Same password and salt should produce same key
+	key2, err := deriveKeyFromPassword(password, salt)
+	assert.NoError(t, err)
+	assert.Equal(t, key, key2)
+}
+
+func TestGenerateSalt(t *testing.T) {
+	salt, err := generateSalt()
+	assert.NoError(t, err)
+	assert.Len(t, salt, 32)
+
+	// Generate another salt and ensure they're different
+	salt2, err := generateSalt()
+	assert.NoError(t, err)
+	assert.Len(t, salt2, 32)
+	assert.NotEqual(t, salt, salt2)
+}
+
+// Benchmark tests for deriveKeyFromPassword
 func BenchmarkDeriveKeyFromPassword(b *testing.B) {
 	// Generate a random password and salt for testing
 	password := make([]byte, 32)
@@ -74,7 +103,7 @@ func BenchmarkDeriveKeyFromPassword(b *testing.B) {
 	b.ResetTimer() // Don't include setup time in benchmark
 
 	for i := 0; i < b.N; i++ {
-		_, err := DeriveKeyFromPassword(password, salt)
+		_, err := deriveKeyFromPassword(password, salt)
 		assert.NoError(b, err)
 	}
 }
@@ -88,7 +117,7 @@ func BenchmarkDeriveKeyFromPassword_ShortPassword(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := DeriveKeyFromPassword(password, salt)
+		_, err := deriveKeyFromPassword(password, salt)
 		assert.NoError(b, err)
 	}
 }
@@ -102,7 +131,7 @@ func BenchmarkDeriveKeyFromPassword_LongPassword(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := DeriveKeyFromPassword(password, salt)
+		_, err := deriveKeyFromPassword(password, salt)
 		assert.NoError(b, err)
 	}
 }
@@ -116,7 +145,7 @@ func BenchmarkDeriveKeyFromPassword_MinimumSalt(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := DeriveKeyFromPassword(password, salt)
+		_, err := deriveKeyFromPassword(password, salt)
 		assert.NoError(b, err)
 	}
 }
@@ -129,7 +158,7 @@ func BenchmarkDeriveKeyFromPassword_LargeSalt(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := DeriveKeyFromPassword(password, salt)
+		_, err := deriveKeyFromPassword(password, salt)
 		assert.NoError(b, err)
 	}
 }

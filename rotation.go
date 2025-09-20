@@ -1,14 +1,10 @@
 package secrets
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // Rotate generates a new encryption key and re-encrypts all data
@@ -64,23 +60,32 @@ func (s *Store) updateFiles() {
 		return
 	}
 	for _, file := range files {
-		if s.getKeyIndex(file) != origKeyIndex {
-			updateFiles() // Didn't get them all, redo the update.
+		i, err := s.getKeyIndex(file)
+		if err != nil || i != origKeyIndex {
+			// TODO: Ensure this cannot loop forever.
+			s.updateFiles() // Didn't get them all, redo the update.
 			return
 		}
 	}
-	l := s.Lock(keyDir)
-	defer l.Unlock()
+	lk, err := s.lock(s.keyDir)
+	if err != nil {
+		return
+	}
+	defer lk.unlock()
 	if s.currentKeyIndex != origKeyIndex {
 		// A rotation happened while checking, can't delete old keys.  Redo.
-		updateFiles()
+		// TODO: Ensure this cannot loop forever.
+		s.updateFiles()
 		return
 	}
 	curKeyPath := fmt.Sprintf("key%d", origKeyIndex)
-	allKeys = filepath.Glob(keyDir + "key*")
+	allKeys, err := filepath.Glob(filepath.Join(s.keyDir, "key*"))
+	if err != nil {
+		return
+	}
 	for _, keyFile := range allKeys {
 		if keyFile != curKeyPath {
-			os.Delete(keyFile)
+			os.Remove(keyFile)
 		}
 	}
 }
@@ -96,7 +101,7 @@ func (s *Store) listDataFiles() ([]string, error) {
 
 		// Skip the keys directory but recurse into other directories
 		if info.IsDir() {
-			if strings.HasPrefix(path, filepath.Join(s.dir, KeysDir)) {
+			if strings.HasPrefix(path, s.keyDir) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -110,19 +115,19 @@ func (s *Store) listDataFiles() ([]string, error) {
 }
 
 // reencryptFile re-encrypts a single file with the new key
-func (s *Store) reencryptFile(relPath string) {
-	fullPath := filepath.Join(s.dir, relPath)
-
-	lk, err := s.lock(fullPath)
+func (s *Store) reencryptFile(path string) {
+	lk, err := s.lock(path)
 	if err != nil {
 		return
 	}
 	defer lk.unlock()
 
 	// Read and decrypt with old key
-	encryptedData, err := os.ReadFile(fullPath)
+	encryptedData, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		// Failed to read file.  Delete it.
+		//		_ = s.Delete(relPath)
+		return
 	}
 
 	if len(encryptedData) < 1 {
@@ -147,11 +152,14 @@ func (s *Store) reencryptFile(relPath string) {
 	// Encrypt with new key
 	newEncryptedData, err := s.encryptData(data)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt with new key: %w", err)
+		// failed to encrypt with new key, just return leaving file
+		// encrypted by old key
+		return
 	}
 
 	// Write back to file
-	_ = os.WriteFile(fullPath, newEncryptedData, s.filePerm)
+	_ = os.WriteFile(path, newEncryptedData, s.filePerm)
+	// TODO: Log error if writefile failed.
 	return
 }
 

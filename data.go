@@ -169,8 +169,19 @@ func (s *Store) decryptData(encryptedData []byte) ([]byte, error) {
 }
 
 // getKeyIndex returns the key index used to encrypt a file.
-func (s *Store) getKeyIndex(file string) (int, error) {
-
+func (s *Store) getKeyIndex(file string) (uint8, error) {
+	// Read encrypted data
+	encryptedData, err := s.readFile(file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, fmt.Errorf("secret not found: %s", file)
+		}
+		return 0, fmt.Errorf("failed to read file %s: %w", file, err)
+	}
+	if len(encryptedData) < 1 {
+		return 0, fmt.Errorf("Corrupt file %s: %w", file, err)
+	}
+	return encryptedData[0], nil
 }
 
 // deriveKeyFromPassword derives a key from a password using Argon2id

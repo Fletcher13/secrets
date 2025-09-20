@@ -17,12 +17,28 @@ type fileLock struct {
 // until it has been released.  The containing directory is created if
 // needed. The returned lock must be released by calling unlock().
 func (s *Store) lock(path string) (*fileLock, error) {
-	if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
-		return nil, fmt.Errorf("failed to create lock directory: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open lock file: %w", err)
+	var f *os.File
+	stat, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
+			return nil, fmt.Errorf("failed to create lock directory: %w", err)
+		}
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open lock file: %w", err)
+		}
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to access lock file: %w", err)
+	} else if stat.IsDir() {
+		f, err = os.OpenFile(path, os.O_RDWR, s.dirPerm)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open lock file: %w", err)
+		}
+	} else {
+		f, err = os.OpenFile(path, os.O_RDWR, s.filePerm)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open lock file: %w", err)
+		}
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		_ = f.Close()
@@ -47,6 +63,7 @@ func (s *Store) rLock(path string) (*fileLock, error) {
 	return &fileLock{f: f}, nil
 }
 
+/*
 // lockNB acquires an exclusive lock on the given file path.  This call
 // is non-blocking, so if the lock is already held, an error will be
 // returned.  The containing directory is created if needed. The
@@ -66,7 +83,6 @@ func (s *Store) lockNB(path string) (*fileLock, error) {
 	return &fileLock{f: f}, nil
 }
 
-/*
 // rLockNB acquires a shared lock on the given file path. The file
 // must exist.  This call is non-blocking, so if the lock is already
 // held, an error will be returned.  The returned lock must be released
@@ -92,4 +108,3 @@ func (l *fileLock) unlock() {
 	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
 	_ = l.f.Close()
 }
-

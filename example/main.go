@@ -28,9 +28,7 @@ func main() {
 		log.Fatalf("Error creating/opening store: %v", err)
 	}
 	defer func() {
-		if err := store.Close(); err != nil {
-			log.Printf("Error closing store: %v", err)
-		}
+		store.Close()
 		err = os.RemoveAll(dir) // Clean up the directory when done
 		if err != nil {
 			log.Fatalf("Error ensuring store directory does not exist: %v", err)
@@ -64,14 +62,6 @@ func main() {
 	}
 	fmt.Printf("Loaded secret: %s\n", string(loadedData))
 
-	// Get store information
-	info, err := store.GetStoreInfo()
-	if err != nil {
-		log.Fatalf("Error getting store info: %v", err)
-	}
-	fmt.Printf("Store info: Directory=%s, CurrentKeyIndex=%d, SecretCount=%d, KeyCount=%d\n",
-		info.Directory, info.CurrentKeyIndex, info.SecretCount, info.KeyCount)
-
 	// Demonstrate key rotation
 	fmt.Println("\n=== Key Rotation Example ===")
 	err = store.Rotate()
@@ -86,28 +76,6 @@ func main() {
 		log.Fatalf("Error loading secret after rotation: %v", err)
 	}
 	fmt.Printf("Secret still accessible after rotation: %s\n", string(loadedData))
-
-	// Get updated store information
-	info, err = store.GetStoreInfo()
-	if err != nil {
-		log.Fatalf("Error getting store info: %v", err)
-	}
-	fmt.Printf("Updated store info: CurrentKeyIndex=%d, KeyCount=%d\n",
-		info.CurrentKeyIndex, info.KeyCount)
-
-	// Demonstrate password-based key derivation
-	fmt.Println("\n=== Password-based Key Derivation Example ===")
-	pass := []byte("my_secure_password")
-	salt, err := secrets.GenerateSalt()
-	if err != nil {
-		log.Fatalf("Error generating salt: %v", err)
-	}
-
-	derivedKey, err := secrets.DeriveKeyFromPassword(pass, salt)
-	if err != nil {
-		log.Fatalf("Error deriving key: %v", err)
-	}
-	fmt.Printf("Derived key from password (length: %d bytes)\n", len(derivedKey))
 
 	// Demonstrate secure memory wiping
 	fmt.Println("\n=== Secure Memory Wiping Example ===")

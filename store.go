@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 const (
@@ -15,9 +14,9 @@ const (
 	AlgorithmAES256GCM = 0
 
 	// File names
-	KeyDir       = ".secretskeys"
-	PrimSaltFile = "primarysalt"
-	CurKeyFile   = "currentkey"
+	KeyDir        = ".secretskeys"
+	PrimSaltFile  = "primarysalt"
+	CurKeyIdxFile = "currentkey"
 )
 
 // Store represents a secure storage for sensitive data
@@ -25,7 +24,7 @@ type Store struct {
 	dir             string
 	keyDir          string
 	saltFile        string
-	curKeyFile      string
+	curKeyIdxFile   string
 	primaryKey      []byte
 	currentKey      []byte
 	currentKeyIndex uint8
@@ -63,16 +62,14 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 	}
 
 	store := &Store{
-		dir:          storePath,
-		keyDir:       filepath.Join(storePath, KeyDir),
-		saltFile:     filepath.Join(storePath, KeyDir, PrimSaltFile),
-		curKeyFile:   filepath.Join(storePath, KeyDir, CurKeyFile),
-		primaryKey:   make([]byte, 32),
-		recoveryCh:   make(chan struct{}, 1),
-		stopRecovery: make(chan struct{}),
+		dir:           storePath,
+		keyDir:        filepath.Join(storePath, KeyDir),
+		saltFile:      filepath.Join(storePath, KeyDir, PrimSaltFile),
+		curKeyIdxFile: filepath.Join(storePath, KeyDir, CurKeyIdxFile),
+		primaryKey:    make([]byte, 32),
 	}
 
-	isNewStore, err := checkNewStore(store)
+	isNewStore, err := store.checkNewStore()
 	if err != nil {
 		return nil, err
 	}
@@ -98,22 +95,20 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 }
 
 // Close closes the store and cleans up resources
-func (s *Store) Close() error {
-	// closing an already closed channel can cause a panic.  Ignore the panic.
-	defer func() { _ = recover() }()
-
-	// Signal recovery process to stop (idempotent)
-	close(s.stopRecovery)
-
+func (s *Store) Close() {
 	// Clear sensitive data from memory
 	Wipe(s.primaryKey)
 	Wipe(s.currentKey)
 
-	return nil
+	// Ensure future references fail:
+	s.dir = ""
+	s.keyDir = ""
+	s.saltFile = ""
+	s.curKeyIdxFile = ""
 }
 
 // Check if this is an existing store or not.
-func checkNewStore(store *Store) (bool, error) {
+func (s *Store) checkNewStore() (bool, error) {
 	stat, err := os.Stat(s.dir)
 	if err != nil && !os.IsNotExist(err) {
 		return false, fmt.Errorf("error accessing %s: %w", s.dir, err)
@@ -141,19 +136,16 @@ func checkNewStore(store *Store) (bool, error) {
 	// Check that primary key salt, currentkey, and keyN are all there.
 	_, err = os.Stat(s.saltFile)
 	if err != nil {
-		return false, fmt.Errorf("%s is not a valid store, no salt file",
-			storePath)
+		return false, fmt.Errorf("%s is not a valid store, no salt file", s.dir)
 	}
-	data, err := os.ReadFile(s.curKeyFile)
+	data, err := os.ReadFile(s.curKeyIdxFile)
 	if err != nil || len(data) != 1 {
-		return false, fmt.Errorf("%s is not a valid store, no current key file",
-			storePath)
+		return false, fmt.Errorf("%s is not a valid store, no key index", s.dir)
 	}
-	curKeyFile := filepath.Join(s.keyDir, fmt.Sprintf("key%d", data[0]))
-	_, err = os.Stat(curKeyFile)
+	curKeyIdxFile := filepath.Join(s.keyDir, fmt.Sprintf("key%d", data[0]))
+	_, err = os.Stat(curKeyIdxFile)
 	if err != nil {
-		return false, fmt.Errorf("%s is not a valid store, no key file",
-			s.dir)
+		return false, fmt.Errorf("%s is not a valid store, no key file", s.dir)
 	}
 
 	return false, nil
@@ -169,12 +161,20 @@ func (s *Store) createNewStore(password []byte) error {
 		return fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
+	// TODO: Double check that this works.  Evaluate race conditions carefully.
+	lk, err := s.lock(s.keyDir)
+	if err != nil {
+		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
+	}
+	defer lk.unlock()
+
 	if err := s.createPrimaryKey(password); err != nil {
 		return fmt.Errorf("failed to extract primary key from password")
 	}
 
 	// Generate initial key
-	if key, err := s.newKey(0); err != nil {
+	var key []byte
+	if key, err = s.newKey(0); err != nil {
 		return fmt.Errorf("failed to create key0: %w", err)
 	}
 
@@ -191,27 +191,33 @@ func (s *Store) createNewStore(password []byte) error {
 }
 
 func (s *Store) openExistingStore(password []byte) error {
-	err = store.getPrimaryKey(password) // password needed to retrieve salt.
+	lk, err := s.rLock(s.keyDir)
+	if err != nil {
+		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
+	}
+	defer lk.unlock()
+
+	err = s.getPrimaryKey(password) // password needed to retrieve salt.
 	if err != nil {
 		return err
 	}
-	err = store.loadCurrentKey()
+	err = s.loadCurrentKey()
 	if err != nil {
 		return err
 	}
-	stat, err := os.Stat(store.dir)
+	stat, err := os.Stat(s.dir)
 	if err != nil {
 		return err // This should never fail.
 	}
-	store.dirPerm = stat.Mode() & os.ModePerm
-	store.filePerm = store.dirPerm & 0666 // Remove execute bit
+	s.dirPerm = stat.Mode() & os.ModePerm
+	s.filePerm = s.dirPerm & 0666 // Remove execute bit
 
 	return nil
 }
 
 func (s *Store) createPrimaryKey(password []byte) error {
 	// Generate salt, save it, and then get primaryKey with Argon2
-	salt, err := GenerateSalt()
+	salt, err := generateSalt()
 	if err != nil {
 		return fmt.Errorf("failed to generate random salt: %w", err)
 	}
@@ -219,7 +225,7 @@ func (s *Store) createPrimaryKey(password []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to write salt for key: %w", err)
 	}
-	s.primaryKey, err = DeriveKeyFromPassword(password, salt)
+	s.primaryKey, err = deriveKeyFromPassword(password, salt)
 	if err != nil {
 		return fmt.Errorf("failed to generate key: %w", err)
 	}
@@ -232,7 +238,7 @@ func (s *Store) getPrimaryKey(password []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to read primary key salt: %w", err)
 	}
-	s.primaryKey, err = DeriveKeyFromPassword(password, salt)
+	s.primaryKey, err = deriveKeyFromPassword(password, salt)
 	if err != nil {
 		return fmt.Errorf("failed to generate key: %w", err)
 	}
@@ -242,7 +248,7 @@ func (s *Store) getPrimaryKey(password []byte) error {
 // loadCurrentKey loads the current encryption key
 func (s *Store) loadCurrentKey() error {
 	// Read current key index
-	data, err := s.readFile(s.curKeyFile)
+	data, err := s.readFile(s.curKeyIdxFile)
 	if err != nil {
 		return fmt.Errorf("failed to read current key file: %w", err)
 	}
@@ -265,7 +271,7 @@ func (s *Store) loadCurrentKey() error {
 
 // saveCurrentKeyIndex saves the current key index
 func (s *Store) saveCurrentKeyIndex() error {
-	return s.writeFile(s.curKeyFile, []byte{s.currentKeyIndex})
+	return s.writeFile(s.curKeyIdxFile, []byte{s.currentKeyIndex})
 }
 
 // newKey encrypts and saves a key

@@ -164,6 +164,9 @@ func (s *Store) decryptData(encryptedData []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
+	if data == nil { // Return an empty byte slice instead of nil.
+		data = make([]byte, 0)
+	}
 
 	return data, nil
 }

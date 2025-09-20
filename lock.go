@@ -1,7 +1,7 @@
 package secrets
 
 import (
-	"fmt"
+	//	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -21,28 +21,28 @@ func (s *Store) lock(path string) (*fileLock, error) {
 	stat, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
-			return nil, fmt.Errorf("failed to create lock directory: %w", err)
+			return nil, err //fmt.Errorf("failed to create lock directory: %w", err)
 		}
 		f, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open lock file: %w", err)
+			return nil, err //fmt.Errorf("failed to open lock file: %w", err)
 		}
 	} else if err != nil {
-		return nil, fmt.Errorf("failed to access lock file: %w", err)
+		return nil, err //fmt.Errorf("failed to access lock file: %w", err)
 	} else if stat.IsDir() {
 		f, err = os.OpenFile(path, os.O_RDWR, s.dirPerm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open lock file: %w", err)
+			return nil, err //fmt.Errorf("failed to open lock file: %w", err)
 		}
 	} else {
 		f, err = os.OpenFile(path, os.O_RDWR, s.filePerm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open lock file: %w", err)
+			return nil, err //fmt.Errorf("failed to open lock file: %w", err)
 		}
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("failed to acquire exclusive lock: %w", err)
+		return nil, err //fmt.Errorf("failed to acquire exclusive lock: %w", err)
 	}
 	return &fileLock{f: f}, nil
 }
@@ -54,11 +54,11 @@ func (s *Store) lock(path string) (*fileLock, error) {
 func (s *Store) rLock(path string) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file for shared lock: %w", err)
+		return nil, err //fmt.Errorf("failed to open file for shared lock: %w", err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("failed to acquire shared lock: %w", err)
+		return nil, err //fmt.Errorf("failed to acquire shared lock: %w", err)
 	}
 	return &fileLock{f: f}, nil
 }
@@ -70,15 +70,15 @@ func (s *Store) rLock(path string) (*fileLock, error) {
 // returned lock must be released by calling unlock().
 func (s *Store) lockNB(path string) (*fileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
-		return nil, fmt.Errorf("failed to create lock directory: %w", err)
+		return nil, err//fmt.Errorf("failed to create lock directory: %w", err)
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open lock file: %w", err)
+		return nil, err//fmt.Errorf("failed to open lock file: %w", err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("failed to acquire exclusive lock: %w", err)
+		return nil, err//fmt.Errorf("failed to acquire exclusive lock: %w", err)
 	}
 	return &fileLock{f: f}, nil
 }
@@ -90,11 +90,11 @@ func (s *Store) lockNB(path string) (*fileLock, error) {
 func (s *Store) rLockNB(path string) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file for shared lock: %w", err)
+		return nil, err//fmt.Errorf("failed to open file for shared lock: %w", err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("failed to acquire shared lock: %w", err)
+		return nil, err//fmt.Errorf("failed to acquire shared lock: %w", err)
 	}
 	return &fileLock{f: f}, nil
 }

@@ -9,7 +9,7 @@ import (
 
 // Rotate generates a new encryption key and re-encrypts all data
 func (s *Store) Rotate() error {
-	lk, err := s.lock(s.keyDir)
+	lk, err := s.lock(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("key rotation currently in process; cannot start a new one")
 	}
@@ -67,7 +67,7 @@ func (s *Store) updateFiles() {
 			return
 		}
 	}
-	lk, err := s.lock(s.keyDir)
+	lk, err := s.lock(s.lockFile)
 	if err != nil {
 		return
 	}

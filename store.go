@@ -17,6 +17,7 @@ const (
 	KeyDir        = ".secretskeys"
 	PrimSaltFile  = "primarysalt"
 	CurKeyIdxFile = "currentkey"
+	LockFile      = ".keylock"
 )
 
 // Store represents a secure storage for sensitive data
@@ -25,6 +26,7 @@ type Store struct {
 	keyDir          string
 	saltFile        string
 	curKeyIdxFile   string
+	lockFile        string
 	primaryKey      []byte
 	currentKey      []byte
 	currentKeyIndex uint8
@@ -52,7 +54,6 @@ type DataFile struct {
 func NewStore(dirpath string, password []byte) (*Store, error) {
 	// TODO: if len(password) == 0 { Use TPM2.0 sealed key }
 	if len(password) == 0 {
-		// TODO: Use PBKDF2 to generate the key from any password.
 		return nil, fmt.Errorf("password must not be empty")
 	}
 
@@ -66,7 +67,7 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 		keyDir:        filepath.Join(storePath, KeyDir),
 		saltFile:      filepath.Join(storePath, KeyDir, PrimSaltFile),
 		curKeyIdxFile: filepath.Join(storePath, KeyDir, CurKeyIdxFile),
-		primaryKey:    make([]byte, 32),
+		lockFile:      filepath.Join(storePath, KeyDir, LockFile),
 	}
 
 	isNewStore, err := store.checkNewStore()
@@ -162,9 +163,9 @@ func (s *Store) createNewStore(password []byte) error {
 	}
 
 	// TODO: Double check that this works.  Evaluate race conditions carefully.
-	lk, err := s.lock(s.keyDir)
+	lk, err := s.lock(s.lockFile)
 	if err != nil {
-		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
+		return fmt.Errorf("error locking %s: %w", s.lockFile, err)
 	}
 	defer lk.unlock()
 
@@ -191,7 +192,7 @@ func (s *Store) createNewStore(password []byte) error {
 }
 
 func (s *Store) openExistingStore(password []byte) error {
-	lk, err := s.rLock(s.keyDir)
+	lk, err := s.rLock(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
 	}

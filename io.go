@@ -9,7 +9,7 @@ import (
 // releases the lock, then returns the data in the file as a byte slice.
 // This minimizes the amount of time spent with the lock held.
 func (s *Store) readFile(path string) ([]byte, error) {
-	lk, err := s.lockShared(path)
+	lk, err := s.rLock(path)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +28,7 @@ func (s *Store) readFile(path string) ([]byte, error) {
 // releases the lock.  This minimizes the amount of time spent with the
 // lock held.
 func (s *Store) writeFile(path string, data []byte) (error) {
-	lk, err := s.lockExclusive(path)
+	lk, err := s.lock(path)
 	if err != nil {
 		return err
 	}

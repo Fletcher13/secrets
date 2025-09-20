@@ -12,11 +12,11 @@ type fileLock struct {
 	f *os.File
 }
 
-// lockExclusive acquires an exclusive lock on the given file path.
-// This call is blocking, so if the lock is held, the function will wait
+// lock acquires an exclusive lock on the given file path.  This call is
+// blocking, so if the lock is already held, the function will wait
 // until it has been released.  The containing directory is created if
 // needed. The returned lock must be released by calling unlock().
-func (s *Store) lockExclusive(path string) (*fileLock, error) {
+func (s *Store) lock(path string) (*fileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
@@ -31,11 +31,11 @@ func (s *Store) lockExclusive(path string) (*fileLock, error) {
 	return &fileLock{f: f}, nil
 }
 
-// lockShared acquires a shared lock on the given file path. The file
-// must exist.  This call is blocking, so if the lock is held, the
+// rLock acquires a shared lock on the given file path. The file must
+// exist.  This call is blocking, so if the lock is already held, the
 // function will wait until it has been released.  The returned lock
 // must be released by calling unlock().
-func (s *Store) lockShared(path string) (*fileLock, error) {
+func (s *Store) rLock(path string) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file for shared lock: %w", err)
@@ -47,12 +47,11 @@ func (s *Store) lockShared(path string) (*fileLock, error) {
 	return &fileLock{f: f}, nil
 }
 
-/*
-// LockExclusiveNB acquires an exclusive lock on the given file path.
-// This call is non-blocking, so if the lock is held, an error will be
+// lockNB acquires an exclusive lock on the given file path.  This call
+// is non-blocking, so if the lock is already held, an error will be
 // returned.  The containing directory is created if needed. The
 // returned lock must be released by calling unlock().
-func (s *Store) LockExclusiveNB(path string) (*fileLock, error) {
+func (s *Store) lockNB(path string) (*fileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
@@ -67,11 +66,12 @@ func (s *Store) LockExclusiveNB(path string) (*fileLock, error) {
 	return &fileLock{f: f}, nil
 }
 
-// LockShared acquires a shared lock on the given file path. The file
-// must exist.  This call is non-blocking, so if the lock is held, an
-// error will be returned.  The returned lock must be released by
-// calling unlock().
-func (s *Store) LockSharedNB(path string) (*fileLock, error) {
+/*
+// rLockNB acquires a shared lock on the given file path. The file
+// must exist.  This call is non-blocking, so if the lock is already
+// held, an error will be returned.  The returned lock must be released
+// by calling unlock().
+func (s *Store) rLockNB(path string) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file for shared lock: %w", err)

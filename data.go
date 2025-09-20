@@ -73,17 +73,10 @@ func (s *Store) Load(path string) ([]byte, error) {
 // Delete removes sensitive data from the given path
 func (s *Store) Delete(path string) error {
 	// Clean and validate path
-	cleanPath := filepath.Clean(path)
-	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "/..") {
-		return fmt.Errorf("path outside store hierarchy: %s", path)
+	fullPath := filepath.Clean(filepath.Join(s.dir, path))
+	if !strings.HasPrefix(fullPath, s.dir) {
+		return nil, fmt.Errorf("path outside store hierarchy: %s", path)
 	}
-
-	// Ensure path is relative
-	if filepath.IsAbs(cleanPath) {
-		return fmt.Errorf("absolute paths not allowed: %s", path)
-	}
-
-	fullPath := filepath.Join(s.dir, cleanPath)
 
 	// Require that the file exists; do not create it when locking
 	if _, err := os.Stat(fullPath); err != nil {
@@ -98,35 +91,6 @@ func (s *Store) Delete(path string) error {
 	defer lk.unlock()
 
 	return os.Remove(fullPath)
-}
-
-// list returns all secret paths in the store
-func (s *Store) list() ([]string, error) {
-	var alldata []string
-	err := filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip the keys directory but recurse into other directories
-		if info.IsDir() {
-			if strings.HasPrefix(path, filepath.Join(s.dir, KeysDir)) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Get relative path
-		relPath, err := filepath.Rel(s.dir, path)
-		if err != nil {
-			return err
-		}
-
-		alldata = append(alldata, relPath)
-		return nil
-	})
-
-	return alldata, err
 }
 
 // encryptData encrypts data using the current key

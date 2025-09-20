@@ -28,9 +28,6 @@ type Store struct {
 	currentKeyIndex uint8
 	dirPerm         os.FileMode
 	filePerm        os.FileMode
-	mutex           sync.RWMutex
-	recoveryCh      chan struct{}
-	stopRecovery    chan struct{}
 }
 
 // KeyData represents the structure of a key file
@@ -77,26 +74,19 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 	if isNewStore {
 		err = store.createNewStore(password) // password needed to set salt.
 	} else {
-		err = store.getPrimaryKey(password) // password needed to retrieve salt.
-		if err != nil {
-			return nil, err
-		}
-		err = store.loadCurrentKey()
+		err = store.openExistingStore(password) // password needed for primary key.
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	stat, err := os.Stat(store.dir)
-	if err != nil {
-		// This should never fail.
-		return nil, err
-	}
-	store.dirPerm = stat.Mode() & os.ModePerm
-	store.filePerm = store.dirPerm & 0666 // Remove execute bit
 
 	// Start recovery process if needed
-	go store.recoveryProcess()
+	if err = store.checkForOldKeys(); err != nil {
+		return nil, err
+	}
+
+	// Start watcher for key rotation done by other processes
+	go store.rotateWatch()
 
 	return store, nil
 }
@@ -181,14 +171,8 @@ func (s *Store) createNewStore(password []byte) error {
 	}
 
 	// Generate initial key
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return fmt.Errorf("failed to generate key: %w", err)
-	}
-
-	// Encrypt and save key0
-	if err := s.saveKey(0, key); err != nil {
-		return fmt.Errorf("failed to save key0: %w", err)
+	if key, err := s.newKey(0); err != nil {
+		return fmt.Errorf("failed to create key0: %w", err)
 	}
 
 	// Set current key
@@ -199,6 +183,25 @@ func (s *Store) createNewStore(password []byte) error {
 	if err := s.saveCurrentKeyIndex(); err != nil {
 		return fmt.Errorf("failed to initialize store: %w", err)
 	}
+
+	return nil
+}
+
+func (s *Store) openExistingStore(password []byte) error {
+	err = store.getPrimaryKey(password) // password needed to retrieve salt.
+	if err != nil {
+		return err
+	}
+	err = store.loadCurrentKey()
+	if err != nil {
+		return err
+	}
+	stat, err := os.Stat(store.dir)
+	if err != nil {
+		return err // This should never fail.
+	}
+	store.dirPerm = stat.Mode() & os.ModePerm
+	store.filePerm = store.dirPerm & 0666 // Remove execute bit
 
 	return nil
 }
@@ -269,23 +272,29 @@ func (s *Store) saveCurrentKeyIndex() error {
 }
 
 // saveKey encrypts and saves a key
-func (s *Store) saveKey(index uint8, key []byte) error {
+func (s *Store) newKey(index uint8) ([]byte, error) {
 	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
+
+	// Generate the key.
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("failed to generate key: %w", err)
+	}
 
 	// Encrypt the key with primary key using AES-GCM
 	block, err := aes.NewCipher(s.primaryKey[:32])
 	if err != nil {
-		return fmt.Errorf("failed to create cipher: %w", err)
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return fmt.Errorf("failed to create GCM: %w", err)
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
-		return fmt.Errorf("failed to generate nonce: %w", err)
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
 	// Create key data structure
@@ -300,7 +309,11 @@ func (s *Store) saveKey(index uint8, key []byte) error {
 	copy(data[1:], nonce)
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
-	return s.writeFile(keyPath, data)
+	err = s.writeFile(keyPath, data)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 // loadKey loads and decrypts a key
@@ -345,4 +358,18 @@ func (s *Store) loadKey(index uint8) ([]byte, error) {
 	}
 
 	return key, nil
+}
+
+// checkForOldKeys checks for inconsistent key usage and recovers if needed
+func (s *Store) checkForOldKeys() error {
+	// Get list of key files
+	keysDir := filepath.Join(s.dir, KeysDir)
+	keys, err := filepath.Glob(keysDir + filepath.Separator + "key*")
+	if err != nil {
+		return fmt.Errorf("failed to read keys directory: %w", err)
+	}
+	if len(keys) > 1 {
+		go s.updateFiles()
+	}
+	return nil
 }

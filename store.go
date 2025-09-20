@@ -15,14 +15,17 @@ const (
 	AlgorithmAES256GCM = 0
 
 	// File names
-	KeysDir         = ".secretskeys"
-	PrimarySaltFile = KeysDir + "/primarysalt"
-	CurrentKeyFile  = KeysDir + "/currentkey"
+	KeyDir       = ".secretskeys"
+	PrimSaltFile = "primarysalt"
+	CurKeyFile   = "currentkey"
 )
 
 // Store represents a secure storage for sensitive data
 type Store struct {
 	dir             string
+	keyDir          string
+	saltFile        string
+	curKeyFile      string
 	primaryKey      []byte
 	currentKey      []byte
 	currentKeyIndex uint8
@@ -59,16 +62,19 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 		return nil, fmt.Errorf("error parsing directory %s: %w", dirpath, err)
 	}
 
-	isNewStore, err := checkNewStore(storePath)
-	if err != nil {
-		return nil, err
-	}
-
 	store := &Store{
 		dir:          storePath,
+		keyDir:       filepath.Join(storePath, KeyDir),
+		saltFile:     filepath.Join(storePath, KeyDir, PrimSaltFile),
+		curKeyFile:   filepath.Join(storePath, KeyDir, CurKeyFile),
 		primaryKey:   make([]byte, 32),
 		recoveryCh:   make(chan struct{}, 1),
 		stopRecovery: make(chan struct{}),
+	}
+
+	isNewStore, err := checkNewStore(store)
+	if err != nil {
+		return nil, err
 	}
 
 	if isNewStore {
@@ -107,49 +113,47 @@ func (s *Store) Close() error {
 }
 
 // Check if this is an existing store or not.
-func checkNewStore(storePath string) (bool, error) {
-	keysPath := filepath.Join(storePath, KeysDir)
-
-	stat, err := os.Stat(storePath)
+func checkNewStore(store *Store) (bool, error) {
+	stat, err := os.Stat(s.dir)
 	if err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("error accessing %s: %w", storePath, err)
+		return false, fmt.Errorf("error accessing %s: %w", s.dir, err)
 	} else if os.IsNotExist(err) {
 		return true, nil
 	} else if !stat.IsDir() {
-		return false, fmt.Errorf("%s is not a directory: %w", storePath, err)
+		return false, fmt.Errorf("%s is not a directory: %w", s.dir, err)
 	}
 
 	// Directory exists, check if it's a valid store
-	stat, err = os.Stat(keysPath)
+	stat, err = os.Stat(s.keyDir)
 	if os.IsNotExist(err) {
 		// No keys directory, ensure dir is empty.
-		dirFiles, err := os.ReadDir(storePath)
+		dirFiles, err := os.ReadDir(s.dir)
 		if err != nil || len(dirFiles) != 0 {
-			return false, fmt.Errorf("%s is not empty", storePath)
+			return false, fmt.Errorf("%s is not empty", s.dir)
 		}
 		return true, nil
 	} else if err != nil {
-		return false, fmt.Errorf("error accessing %s: %w", keysPath, err)
+		return false, fmt.Errorf("error accessing %s: %w", s.keyDir, err)
 	} else if !stat.IsDir() {
-		return false, fmt.Errorf("%s is not a directory", storePath)
+		return false, fmt.Errorf("%s is not a directory", s.dir)
 	}
 
 	// Check that primary key salt, currentkey, and keyN are all there.
-	_, err = os.Stat(filepath.Join(storePath, PrimarySaltFile))
+	_, err = os.Stat(s.saltFile)
 	if err != nil {
 		return false, fmt.Errorf("%s is not a valid store, no salt file",
 			storePath)
 	}
-	data, err := os.ReadFile(filepath.Join(storePath, CurrentKeyFile))
+	data, err := os.ReadFile(s.curKeyFile)
 	if err != nil || len(data) != 1 {
 		return false, fmt.Errorf("%s is not a valid store, no current key file",
 			storePath)
 	}
-	keyPath := filepath.Join(storePath, KeysDir, fmt.Sprintf("key%d", data[0]))
-	_, err = os.Stat(keyPath)
+	curKeyFile := filepath.Join(s.keyDir, fmt.Sprintf("key%d", data[0]))
+	_, err = os.Stat(curKeyFile)
 	if err != nil {
 		return false, fmt.Errorf("%s is not a valid store, no key file",
-			storePath)
+			s.dir)
 	}
 
 	return false, nil
@@ -161,8 +165,7 @@ func (s *Store) createNewStore(password []byte) error {
 	s.dirPerm = 0700
 	s.filePerm = 0600
 
-	keysPath := filepath.Join(s.dir, KeysDir)
-	if err := os.MkdirAll(keysPath, s.dirPerm); err != nil {
+	if err := os.MkdirAll(s.keyDir, s.dirPerm); err != nil {
 		return fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
@@ -212,8 +215,7 @@ func (s *Store) createPrimaryKey(password []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate random salt: %w", err)
 	}
-	primarySaltFile := filepath.Join(s.dir, PrimarySaltFile)
-	err = s.writeFile(primarySaltFile, salt)
+	err = s.writeFile(s.saltFile, salt)
 	if err != nil {
 		return fmt.Errorf("failed to write salt for key: %w", err)
 	}
@@ -226,8 +228,7 @@ func (s *Store) createPrimaryKey(password []byte) error {
 
 func (s *Store) getPrimaryKey(password []byte) error {
 	// Read salt, then get primaryKey with Argon2
-	primarySaltFile := filepath.Join(s.dir, PrimarySaltFile)
-	salt, err := s.readFile(primarySaltFile)
+	salt, err := s.readFile(s.saltFile)
 	if err != nil {
 		return fmt.Errorf("failed to read primary key salt: %w", err)
 	}
@@ -241,9 +242,7 @@ func (s *Store) getPrimaryKey(password []byte) error {
 // loadCurrentKey loads the current encryption key
 func (s *Store) loadCurrentKey() error {
 	// Read current key index
-	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
-
-	data, err := s.readFile(currentKeyPath)
+	data, err := s.readFile(s.curKeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to read current key file: %w", err)
 	}
@@ -266,14 +265,12 @@ func (s *Store) loadCurrentKey() error {
 
 // saveCurrentKeyIndex saves the current key index
 func (s *Store) saveCurrentKeyIndex() error {
-	currentKeyPath := filepath.Join(s.dir, CurrentKeyFile)
-
-	return s.writeFile(currentKeyPath, []byte{s.currentKeyIndex})
+	return s.writeFile(s.curKeyFile, []byte{s.currentKeyIndex})
 }
 
-// saveKey encrypts and saves a key
+// newKey encrypts and saves a key
 func (s *Store) newKey(index uint8) ([]byte, error) {
-	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
+	keyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", index))
 
 	// Generate the key.
 	key := make([]byte, 32)
@@ -318,7 +315,7 @@ func (s *Store) newKey(index uint8) ([]byte, error) {
 
 // loadKey loads and decrypts a key
 func (s *Store) loadKey(index uint8) ([]byte, error) {
-	keyPath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
+	keyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", index))
 
 	data, err := s.readFile(keyPath)
 	if err != nil {
@@ -363,8 +360,7 @@ func (s *Store) loadKey(index uint8) ([]byte, error) {
 // checkForOldKeys checks for inconsistent key usage and recovers if needed
 func (s *Store) checkForOldKeys() error {
 	// Get list of key files
-	keysDir := filepath.Join(s.dir, KeysDir)
-	keys, err := filepath.Glob(keysDir + filepath.Separator + "key*")
+	keys, err := filepath.Glob(filepath.Join(s.keyDir, "key*"))
 	if err != nil {
 		return fmt.Errorf("failed to read keys directory: %w", err)
 	}

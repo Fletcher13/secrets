@@ -75,7 +75,7 @@ func (s *Store) Delete(path string) error {
 	// Clean and validate path
 	fullPath := filepath.Clean(filepath.Join(s.dir, path))
 	if !strings.HasPrefix(fullPath, s.dir) {
-		return nil, fmt.Errorf("path outside store hierarchy: %s", path)
+		return fmt.Errorf("path outside store hierarchy: %s", path)
 	}
 
 	// Require that the file exists; do not create it when locking
@@ -84,7 +84,7 @@ func (s *Store) Delete(path string) error {
 	}
 
 	// Exclusive lock before delete
-	lk, err := s.lockExclusive(fullPath)
+	lk, err := s.lock(fullPath)
 	if err != nil {
 		return err
 	}
@@ -168,10 +168,15 @@ func (s *Store) decryptData(encryptedData []byte) ([]byte, error) {
 	return data, nil
 }
 
-// DeriveKeyFromPassword derives a key from a password using Argon2id
+// getKeyIndex returns the key index used to encrypt a file.
+func (s *Store) getKeyIndex(file string) (int, error) {
+
+}
+
+// deriveKeyFromPassword derives a key from a password using Argon2id
 // Argon2id is the recommended password hashing function by OWASP and provides
 // strong resistance against both side-channel and timing attacks.
-func DeriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
+func deriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
 	if len(salt) < 32 {
 		return nil, fmt.Errorf("salt must be at least 32 bytes")
 	}
@@ -182,8 +187,8 @@ func DeriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
 	return key, nil
 }
 
-// GenerateSalt generates a random salt for key derivation
-func GenerateSalt() ([]byte, error) {
+// generateSalt generates a random salt for key derivation
+func generateSalt() ([]byte, error) {
 	salt := make([]byte, 32)
 	_, err := rand.Read(salt)
 	return salt, err

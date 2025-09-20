@@ -13,23 +13,23 @@ import (
 
 // Rotate generates a new encryption key and re-encrypts all data
 func (s *Store) Rotate() error {
-	l, err := s.Lock(keyDir)
+	lk, err := s.lock(s.keyDir)
 	if err != nil {
 		return fmt.Errorf("key rotation currently in process; cannot start a new one")
 	}
-	defer l.Unlock()
+	defer lk.unlock()
 
 	// Calculate new key index (roll over to 0 if at 255)
 	newKeyIndex := s.currentKeyIndex + 1
 
-	newKeyFilePath := filepath.Join(s.dir, KeysDir, fmt.Sprintf("key%d", index))
-	_, err := os.Stat(newKeyFilePath)
+	newKeyFilePath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", newKeyIndex))
+	_, err = os.Stat(newKeyFilePath)
 	if !os.IsNotExist(err) {
 		return fmt.Errorf("too many existing keys")
 	}
 
 	// Generate new key
-	newKey, err := s.generateKey(newKeyIndex)
+	newKey, err := s.newKey(newKeyIndex)
 	if err != nil {
 		return fmt.Errorf("failed to save new key: %w", err)
 	}
@@ -59,12 +59,12 @@ func (s *Store) updateFiles() {
 	// Clean up old keys if this successfully updated all files.
 	origKeyIndex := s.currentKeyIndex
 	// Get list of all files again, just to make sure there weren't new ones.
-	files, err := s.listDataFiles()
+	files, err = s.listDataFiles()
 	if err != nil {
 		return
 	}
 	for _, file := range files {
-		if index(file) != origKeyIndex {
+		if s.getKeyIndex(file) != origKeyIndex {
 			updateFiles() // Didn't get them all, redo the update.
 			return
 		}
@@ -85,8 +85,8 @@ func (s *Store) updateFiles() {
 	}
 }
 
-// listAllFiles returns all data files (excluding key files)
-func (s *Store) listAllFiles() ([]string, error) {
+// listDataFiles returns all data files (excluding key files)
+func (s *Store) listDataFiles() ([]string, error) {
 	var files []string
 
 	err := filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
@@ -102,13 +102,7 @@ func (s *Store) listAllFiles() ([]string, error) {
 			return nil
 		}
 
-		// Get relative path
-		relPath, err := filepath.Rel(s.dir, path)
-		if err != nil {
-			return err
-		}
-
-		files = append(files, relPath)
+		files = append(files, path)
 		return nil
 	})
 

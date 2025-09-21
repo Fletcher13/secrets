@@ -1,7 +1,6 @@
 package secrets
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,8 +12,7 @@ func TestStore_SaveLoadDelete(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store
-	dir, err := ioutil.TempDir("", "data_test_store")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "data_test_store")
 	defer os.RemoveAll(dir)
 
 	password := []byte("a-very-secret-password-that-is-long-enough")

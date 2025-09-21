@@ -1,7 +1,6 @@
 package secrets
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,8 +13,7 @@ func TestStore_lock(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir, err := ioutil.TempDir("", "lock_test")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "lock_test")
 	defer os.RemoveAll(dir)
 
 	store := &Store{
@@ -41,7 +39,7 @@ func TestStore_lock(t *testing.T) {
 	// Test case 2: Acquire exclusive lock on an existing file
 	t.Run("Lock existing file exclusive", func(t *testing.T) {
 		filePath := filepath.Join(dir, "existing_lock_file.lock")
-		_ = ioutil.WriteFile(filePath, []byte("dummy"), 0600)
+		_ = os.WriteFile(filePath, []byte("dummy"), 0600)
 
 		lk, err := store.lock(filePath)
 		assert.NoError(err)
@@ -98,7 +96,7 @@ func TestStore_lock(t *testing.T) {
 	t.Run("Error creating parent directory", func(t *testing.T) {
 		// Create a file where a directory should be
 		badDir := filepath.Join(dir, "badparent")
-		_ = ioutil.WriteFile(badDir, []byte("file"), 0600)
+		_ = os.WriteFile(badDir, []byte("file"), 0600)
 
 		filePath := filepath.Join(badDir, "lock.lock")
 		lk, err := store.lock(filePath)
@@ -112,8 +110,7 @@ func TestStore_rLock(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir, err := ioutil.TempDir("", "rLock_test")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "rLock_test")
 	defer os.RemoveAll(dir)
 
 	store := &Store{
@@ -124,7 +121,7 @@ func TestStore_rLock(t *testing.T) {
 
 	// Create a file to be locked
 	filePath := filepath.Join(dir, "shared_lock_file.lock")
-	_ = ioutil.WriteFile(filePath, []byte("dummy"), 0600)
+	_ = os.WriteFile(filePath, []byte("dummy"), 0600)
 
 	// Test case 1: Acquire a shared lock successfully
 	t.Run("Acquire shared lock", func(t *testing.T) {
@@ -152,7 +149,7 @@ func TestStore_rLock(t *testing.T) {
 	// Test case 3: Attempt to acquire shared lock when an exclusive lock is held (should block)
 	t.Run("RLock blocking exclusive", func(t *testing.T) {
 		blockingFilePath := filepath.Join(dir, "exclusive_blocking.lock")
-		_ = ioutil.WriteFile(blockingFilePath, []byte("dummy"), 0600)
+		_ = os.WriteFile(blockingFilePath, []byte("dummy"), 0600)
 
 		lkExclusive, err := store.lock(blockingFilePath) // Acquire exclusive lock
 		assert.NoError(err)
@@ -198,8 +195,7 @@ func TestFileLock_unlock(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir, err := ioutil.TempDir("", "unlock_test")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "unlock_test")
 	defer os.RemoveAll(dir)
 
 	store := &Store{
@@ -227,7 +223,7 @@ func TestFileLock_unlock(t *testing.T) {
 	// Test case 2: Unlock a shared lock
 	t.Run("Unlock shared lock", func(t *testing.T) {
 		filePath := filepath.Join(dir, "shared.lock")
-		_ = ioutil.WriteFile(filePath, []byte("dummy"), 0600)
+		_ = os.WriteFile(filePath, []byte("dummy"), 0600)
 
 		lk, err := store.rLock(filePath)
 		assert.NoError(err)

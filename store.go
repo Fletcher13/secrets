@@ -275,7 +275,7 @@ func (s *Store) saveCurrentKeyIndex() error {
 	return s.writeFile(s.curKeyIdxFile, []byte{s.currentKeyIndex})
 }
 
-// newKey encrypts and saves a key
+// newKey generates, encrypts, and saves a key
 func (s *Store) newKey(index uint8) ([]byte, error) {
 	keyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", index))
 
@@ -313,6 +313,8 @@ func (s *Store) newKey(index uint8) ([]byte, error) {
 	copy(data[1:], nonce)
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
+	// Save key.
+	fmt.Printf("kdbg: Saving key %s\n", keyPath)
 	err = s.writeFile(keyPath, data)
 	if err != nil {
 		return nil, err

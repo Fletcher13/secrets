@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,8 +15,7 @@ func TestStore_Rotate(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store
-	dir, err := ioutil.TempDir("", "rotate_test_store")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "rotate_test_store")
 	defer os.RemoveAll(dir)
 	password := []byte("a-very-secret-password-that-is-long-enough")
 	store, err := NewStore(dir, password)
@@ -71,9 +69,9 @@ func TestStore_Rotate(t *testing.T) {
 	store, err = NewStore(dir, password)
 	assert.NoError(err)
 
-	// Test case 2: Attempt to rotate when another rotation is in progress (simulated by locking keyDir)
+	// Test case 2: Attempt to rotate when another rotation is in progress (simulated by locking lockFile)
 	t.Run("Rotate in progress", func(t *testing.T) {
-		lk, err := store.lock(store.keyDir) // Manually acquire lock to simulate ongoing rotation
+		lk, err := store.lock(store.lockFile) // Manually acquire lock to simulate ongoing rotation
 		assert.NoError(err)
 		defer lk.unlock()
 
@@ -118,8 +116,7 @@ func TestStore_listDataFiles(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store and populate with various files and directories
-	dir, err := ioutil.TempDir("", "list_data_files_test")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "list_data_files_test")
 	defer os.RemoveAll(dir)
 
 	password := []byte("a-very-secret-password-that-is-long-enough")
@@ -134,7 +131,7 @@ func TestStore_listDataFiles(t *testing.T) {
 	assert.NoError(store.Save("anotherdir/nested/file3.txt", []byte("data3")))
 
 	// Create a non-secret file outside the store's data structure (should not be listed by listDataFiles)
-	_ = ioutil.WriteFile(filepath.Join(dir, "outsider.txt"), []byte("outsider data"), 0600)
+	_ = os.WriteFile(filepath.Join(dir, "outsider.txt"), []byte("outsider data"), 0600)
 
 	// Test case 1: List files in a populated store
 	t.Run("List files in populated store", func(t *testing.T) {
@@ -170,8 +167,7 @@ func TestStore_reencryptFile(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store
-	dir, err := ioutil.TempDir("", "reencrypt_file_test")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "reencrypt_file_test")
 	defer os.RemoveAll(dir)
 
 	password := []byte("a-very-secret-password-that-is-long-enough")
@@ -229,7 +225,7 @@ func TestStore_reencryptFile(t *testing.T) {
 	t.Run("Corrupted file (unreadable)", func(t *testing.T) {
 		corruptedPath := filepath.Join(dir, "corrupted.bin")
 		// Create a file but remove read permissions to simulate unreadable
-		_ = ioutil.WriteFile(corruptedPath, []byte("corrupt data"), 0000)
+		_ = os.WriteFile(corruptedPath, []byte("corrupt data"), 0000)
 		defer os.Chmod(corruptedPath, 0600) // Restore permissions for cleanup
 
 		// Re-encryption should not panic and ideally log an error (not directly testable here)
@@ -243,7 +239,7 @@ func TestStore_reencryptFile(t *testing.T) {
 	// Test case 4: Handle decryption failure (invalid encrypted data format)
 	t.Run("Decryption failure", func(t *testing.T) {
 		invalidDataPath := filepath.Join(dir, "invalid_encrypted.bin")
-		_ = ioutil.WriteFile(invalidDataPath, []byte{0x01, 0x02, 0x03}, 0600) // Invalid encrypted data
+		_ = os.WriteFile(invalidDataPath, []byte{0x01, 0x02, 0x03}, 0600) // Invalid encrypted data
 
 		assert.NotPanics(func() { store.reencryptFile(invalidDataPath) })
 

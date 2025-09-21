@@ -40,7 +40,7 @@ func (s *Store) lock(path string) (*fileLock, error) {
 			return nil, err //fmt.Errorf("failed to open lock file: %w", err)
 		}
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
 		return nil, err //fmt.Errorf("failed to acquire exclusive lock: %w", err)
 	}
@@ -56,7 +56,7 @@ func (s *Store) rLock(path string) (*fileLock, error) {
 	if err != nil {
 		return nil, err //fmt.Errorf("failed to open file for shared lock: %w", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
 		return nil, err //fmt.Errorf("failed to acquire shared lock: %w", err)
 	}

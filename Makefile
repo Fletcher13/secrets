@@ -8,6 +8,7 @@ build:
 # Run tests
 test:
 	@echo "Running tests..."
+	rm -rf test_*
 	go test -v --cover ./...
 
 # Run example

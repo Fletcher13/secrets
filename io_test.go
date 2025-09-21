@@ -1,7 +1,6 @@
 package secrets
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,8 +12,7 @@ func TestStore_readFile(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir, err := ioutil.TempDir("", "io_test_read")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "io_test_read")
 	defer os.RemoveAll(dir)
 
 	store := &Store{dir: dir}
@@ -24,7 +22,7 @@ func TestStore_readFile(t *testing.T) {
 	t.Run("Read existing file", func(t *testing.T) {
 		filePath := filepath.Join(dir, "testfile.txt")
 		expectedData := []byte("hello world")
-		_ = ioutil.WriteFile(filePath, expectedData, 0600)
+		_ = os.WriteFile(filePath, expectedData, 0600)
 
 		data, err := store.readFile(filePath)
 		assert.NoError(err)
@@ -47,7 +45,7 @@ func TestStore_readFile(t *testing.T) {
 			t.Skip("Skipping permission test when running as root")
 		}
 		filePath := filepath.Join(dir, "no_perm_read.txt")
-		_ = ioutil.WriteFile(filePath, []byte("secret"), 0000) // No read permissions
+		_ = os.WriteFile(filePath, []byte("secret"), 0000) // No read permissions
 
 		data, err := store.readFile(filePath)
 		assert.Error(err)
@@ -60,8 +58,7 @@ func TestStore_writeFile(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir, err := ioutil.TempDir("", "io_test_write")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "io_test_write")
 	defer os.RemoveAll(dir)
 
 	store := &Store{dir: dir}
@@ -74,7 +71,7 @@ func TestStore_writeFile(t *testing.T) {
 		err := store.writeFile(filePath, dataToWrite)
 		assert.NoError(err)
 
-		readData, err := ioutil.ReadFile(filePath)
+		readData, err := os.ReadFile(filePath)
 		assert.NoError(err)
 		assert.Equal(dataToWrite, readData)
 	})
@@ -82,13 +79,13 @@ func TestStore_writeFile(t *testing.T) {
 	// Test case 2: Overwriting an existing file successfully
 	t.Run("Overwrite existing file", func(t *testing.T) {
 		filePath := filepath.Join(dir, "existingfile.txt")
-		_ = ioutil.WriteFile(filePath, []byte("old content"), 0600)
+		_ = os.WriteFile(filePath, []byte("old content"), 0600)
 		dataToWrite := []byte("overwritten content")
 
 		err := store.writeFile(filePath, dataToWrite)
 		assert.NoError(err)
 
-		readData, err := ioutil.ReadFile(filePath)
+		readData, err := os.ReadFile(filePath)
 		assert.NoError(err)
 		assert.Equal(dataToWrite, readData)
 	})
@@ -126,7 +123,7 @@ func TestStore_writeFile(t *testing.T) {
 			t.Skip("Skipping permission test when running as root")
 		}
 		filePath := filepath.Join(dir, "no_perm_file.txt")
-		_ = ioutil.WriteFile(filePath, []byte("original"), 0400) // No write permissions on file
+		_ = os.WriteFile(filePath, []byte("original"), 0400) // No write permissions on file
 		dataToWrite := []byte("new content")
 
 		err := store.writeFile(filePath, dataToWrite)

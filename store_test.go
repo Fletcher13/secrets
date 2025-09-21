@@ -1,7 +1,6 @@
 package secrets
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,8 +13,7 @@ func TestNewStore(t *testing.T) {
 
 	// Test case 1: Create a new store in an empty directory
 	t.Run("New store in empty directory", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "new_store_test")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "new_store_test")
 		defer os.RemoveAll(dir)
 
 		password := []byte("a-very-secret-password-that-is-long-enough")
@@ -29,8 +27,7 @@ func TestNewStore(t *testing.T) {
 
 	// Test case 2: Open an existing valid store
 	t.Run("Open existing store", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "existing_store_test")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "existing_store_test")
 		defer os.RemoveAll(dir)
 
 		password := []byte("a-very-secret-password-that-is-long-enough")
@@ -50,8 +47,7 @@ func TestNewStore(t *testing.T) {
 
 	// Test case 3: Empty password
 	t.Run("Empty password", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "empty_password_test")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "empty_password_test")
 		defer os.RemoveAll(dir)
 
 		password := []byte("")
@@ -63,12 +59,11 @@ func TestNewStore(t *testing.T) {
 
 	// Test case 4: Directory exists but is a file
 	t.Run("Directory is a file", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "file_instead_of_dir_test")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "file_instead_of_dir_test")
 		defer os.RemoveAll(dir)
 
 		filePath := filepath.Join(dir, "testfile.txt")
-		err = ioutil.WriteFile(filePath, []byte("hello"), 0600)
+		err := os.WriteFile(filePath, []byte("hello"), 0600)
 		assert.NoError(err)
 
 		password := []byte("a-very-secret-password-that-is-long-enough")
@@ -80,11 +75,10 @@ func TestNewStore(t *testing.T) {
 
 	// Test case 5: Non-empty directory that is not a store
 	t.Run("Non-empty non-store directory", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "non_empty_non_store_test")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "non_empty_non_store_test")
 		defer os.RemoveAll(dir)
 
-		err = ioutil.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
+		err := os.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
 		assert.NoError(err)
 
 		password := []byte("a-very-secret-password-that-is-long-enough")
@@ -99,8 +93,7 @@ func TestStore_Close(t *testing.T) {
 	assert := assert.New(t)
 
 	// Create a new store
-	dir, err := ioutil.TempDir("", "close_test")
-	assert.NoError(err)
+	dir := filepath.Join("test_stores", "close_test")
 	defer os.RemoveAll(dir)
 
 	password := []byte("a-very-secret-password-that-is-long-enough")
@@ -164,8 +157,7 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 1: Empty directory (should be a new store)
 	t.Run("Empty directory", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_empty")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_empty")
 		defer os.RemoveAll(dir)
 
 		store := &Store{dir: dir}
@@ -176,12 +168,11 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 2: Existing valid store
 	t.Run("Existing valid store", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_existing")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_existing")
 		defer os.RemoveAll(dir)
 
 		password := []byte("some-password")
-		_, err = createTestStore(dir, password)
+		_, err := createTestStore(dir, password)
 		assert.NoError(err)
 
 		store := &Store{
@@ -197,12 +188,11 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 3: Directory exists but is a file
 	t.Run("Directory is a file", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_file")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_file")
 		defer os.RemoveAll(dir)
 
 		filePath := filepath.Join(dir, "testfile.txt")
-		err = ioutil.WriteFile(filePath, []byte("hello"), 0600)
+		err := os.WriteFile(filePath, []byte("hello"), 0600)
 		assert.NoError(err)
 
 		store := &Store{dir: filePath}
@@ -214,11 +204,10 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 4: Non-empty directory but not a store
 	t.Run("Non-empty non-store directory", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_non_empty")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_non_empty")
 		defer os.RemoveAll(dir)
 
-		err = ioutil.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
+		err := os.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
 		assert.NoError(err)
 
 		store := &Store{
@@ -233,12 +222,11 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 5: Invalid keys directory (file instead of dir)
 	t.Run("Keys directory is a file", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_keys_file")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_keys_file")
 		defer os.RemoveAll(dir)
 
 		keysDirPath := filepath.Join(dir, KeyDir)
-		err = ioutil.WriteFile(keysDirPath, []byte("invalid"), 0600)
+		err := os.WriteFile(keysDirPath, []byte("invalid"), 0600)
 		assert.NoError(err)
 
 		store := &Store{
@@ -253,8 +241,7 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 6: Missing salt file in an existing store
 	t.Run("Missing salt file", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_missing_salt")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_missing_salt")
 		defer os.RemoveAll(dir)
 
 		password := []byte("some-password")
@@ -281,8 +268,7 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 7: Invalid current key index file
 	t.Run("Invalid current key index file", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_invalid_idx")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_invalid_idx")
 		defer os.RemoveAll(dir)
 
 		password := []byte("some-password")
@@ -291,7 +277,7 @@ func TestStore_checkNewStore(t *testing.T) {
 		store.Close()
 
 		// Corrupt the current key index file
-		err = ioutil.WriteFile(filepath.Join(dir, KeyDir, CurKeyIdxFile), []byte("invalid"), 0600)
+		err = os.WriteFile(filepath.Join(dir, KeyDir, CurKeyIdxFile), []byte("invalid"), 0600)
 		assert.NoError(err)
 
 		// Re-initialize store object for checkNewStore
@@ -309,8 +295,7 @@ func TestStore_checkNewStore(t *testing.T) {
 
 	// Test case 8: Missing current key file
 	t.Run("Missing current key file", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_new_store_missing_key")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_new_store_missing_key")
 		defer os.RemoveAll(dir)
 
 		password := []byte("some-password")
@@ -357,8 +342,7 @@ func TestStore_checkForOldKeys(t *testing.T) {
 
 	// Test case 1: No old keys (should do nothing)
 	t.Run("No old keys", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_old_keys_no_old")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_old_keys_no_old")
 		defer os.RemoveAll(dir)
 
 		password := []byte("some-password")
@@ -373,8 +357,7 @@ func TestStore_checkForOldKeys(t *testing.T) {
 
 	// Test case 2: Multiple key files (should trigger recovery)
 	t.Run("Multiple key files", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "check_old_keys_multiple")
-		assert.NoError(err)
+		dir := filepath.Join("test_stores", "check_old_keys_multiple")
 		defer os.RemoveAll(dir)
 
 		password := []byte("some-password")

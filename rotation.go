@@ -78,13 +78,14 @@ func (s *Store) updateFiles() {
 		s.updateFiles()
 		return
 	}
-	curKeyPath := fmt.Sprintf("key%d", origKeyIndex)
+	curKeyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", origKeyIndex))
 	allKeys, err := filepath.Glob(filepath.Join(s.keyDir, "key*"))
 	if err != nil {
 		return
 	}
 	for _, keyFile := range allKeys {
 		if keyFile != curKeyPath {
+			fmt.Printf("kdbg: Removing key %s\n", keyFile)
 			os.Remove(keyFile)
 		}
 	}

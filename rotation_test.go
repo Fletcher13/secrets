@@ -139,7 +139,7 @@ func TestStore_listDataFiles(t *testing.T) {
 
 	// Create a non-secret file outside the store's data structure (should not be listed by listDataFiles)
 	outsideFilePath := filepath.Join(dir, "../outsider.txt")
-	_ = os.WriteFile(outsideFilePath, []byte("outsider data"), 0600)
+	assert.NoError(os.WriteFile(outsideFilePath, []byte("outsider data"), 0600))
 	defer os.Remove(outsideFilePath) //nolint: errcheck
 
 	// Test case 1: List files in a populated store
@@ -237,7 +237,7 @@ func TestStore_reencryptFile(t *testing.T) {
 	t.Run("Corrupted file (unreadable)", func(t *testing.T) {
 		corruptedPath := filepath.Join(dir, "corrupted.bin")
 		// Create a file but remove read permissions to simulate unreadable
-		_ = os.WriteFile(corruptedPath, []byte("corrupt data"), 0000)
+		assert.NoError(os.WriteFile(corruptedPath, []byte("corrupt data"), 0000))
 		defer os.Chmod(corruptedPath, 0600) //nolint: errcheck // Restore permissions for cleanup
 
 		// Re-encryption should not panic and ideally log an error (not directly testable here)
@@ -251,7 +251,7 @@ func TestStore_reencryptFile(t *testing.T) {
 	// Test case 4: Handle decryption failure (invalid encrypted data format)
 	t.Run("Decryption failure", func(t *testing.T) {
 		invalidDataPath := filepath.Join(dir, "invalid_encrypted.bin")
-		_ = os.WriteFile(invalidDataPath, []byte{0x01, 0x02, 0x03}, 0600) // Invalid encrypted data
+		assert.NoError(os.WriteFile(invalidDataPath, []byte{0x01, 0x02, 0x03}, 0600)) // Invalid encrypted data
 
 		assert.NotPanics(func() { store.reencryptFile(invalidDataPath) })
 

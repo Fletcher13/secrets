@@ -17,6 +17,18 @@ type fileLock struct {
 // until it has been released.  The containing directory is created if
 // needed. The returned lock must be released by calling unlock().
 func (s *Store) lock(path string) (*fileLock, error) {
+	return s.writeLock(path, syscall.LOCK_EX)
+}
+
+// lockNB acquires an exclusive lock on the given file path.  This call
+// is non-blocking, so if the lock is already held, an error will be
+// returned.  The containing directory is created if needed. The
+// returned lock must be released by calling unlock().
+func (s *Store) lockNB(path string) (*fileLock, error) {
+	return s.writeLock(path, syscall.LOCK_EX|syscall.LOCK_NB)
+}
+
+func (s *Store) writeLock(path string, bits int) (*fileLock, error) {
 	var f *os.File
 	stat, err := os.Stat(path)
 	if err != nil {
@@ -42,7 +54,7 @@ func (s *Store) lock(path string) (*fileLock, error) {
 			return nil, err
 		}
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := syscall.Flock(int(f.Fd()), bits); err != nil {
 		_ = f.Close()
 		fmt.Printf("kdbg: failed to acquire exclusive lock: %v\n", err)
 		return nil, err
@@ -55,37 +67,7 @@ func (s *Store) lock(path string) (*fileLock, error) {
 // function will wait until it has been released.  The returned lock
 // must be released by calling unlock().
 func (s *Store) rLock(path string) (*fileLock, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
-	if err != nil {
-		fmt.Printf("kdbg: failed to open file for shared lock: %v\n", err)
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
-		_ = f.Close()
-		fmt.Printf("kdbg: failed to acquire shared lock: %v\n", err)
-		return nil, err
-	}
-	return &fileLock{f: f}, nil
-}
-
-/*
-// lockNB acquires an exclusive lock on the given file path.  This call
-// is non-blocking, so if the lock is already held, an error will be
-// returned.  The containing directory is created if needed. The
-// returned lock must be released by calling unlock().
-func (s *Store) lockNB(path string) (*fileLock, error) {
-	if err := os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
-		return nil, err//fmt.Errorf("failed to create lock directory: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
-	if err != nil {
-		return nil, err//fmt.Errorf("failed to open lock file: %w", err)
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = f.Close()
-		return nil, err//fmt.Errorf("failed to acquire exclusive lock: %w", err)
-	}
-	return &fileLock{f: f}, nil
+	return s.readLock(path, syscall.LOCK_SH)
 }
 
 // rLockNB acquires a shared lock on the given file path. The file
@@ -93,17 +75,22 @@ func (s *Store) lockNB(path string) (*fileLock, error) {
 // held, an error will be returned.  The returned lock must be released
 // by calling unlock().
 func (s *Store) rLockNB(path string) (*fileLock, error) {
+	return s.readLock(path, syscall.LOCK_SH|syscall.LOCK_NB)
+}
+
+func (s *Store) readLock(path string, bits int) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
-		return nil, err//fmt.Errorf("failed to open file for shared lock: %w", err)
+		fmt.Printf("kdbg: failed to open file for shared lock: %v\n", err)
+		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
+	if err := syscall.Flock(int(f.Fd()), bits); err != nil {
 		_ = f.Close()
-		return nil, err//fmt.Errorf("failed to acquire shared lock: %w", err)
+		fmt.Printf("kdbg: failed to acquire shared lock: %v\n", err)
+		return nil, err
 	}
 	return &fileLock{f: f}, nil
 }
-*/
 
 // unlock releases the lock and closes the file descriptor.
 func (l *fileLock) unlock() {

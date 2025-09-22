@@ -163,7 +163,7 @@ func (s *Store) createNewStore(password []byte) error {
 	}
 
 	// TODO: Double check that this works.  Evaluate race conditions carefully.
-	lk, err := s.lock(s.lockFile)
+	lk, err := s.lockNB(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("error locking %s: %w", s.lockFile, err)
 	}
@@ -192,7 +192,7 @@ func (s *Store) createNewStore(password []byte) error {
 }
 
 func (s *Store) openExistingStore(password []byte) error {
-	lk, err := s.rLock(s.lockFile)
+	lk, err := s.rLockNB(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
 	}

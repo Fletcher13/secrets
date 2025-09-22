@@ -58,11 +58,11 @@ func TestNewStore(t *testing.T) {
 	// Test case 4: Directory exists but is a file
 	t.Run("Directory is a file", func(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "file_instead_of_dir_test")
-		err := os.MkdirAll(dir, 0700)
+		assert.NoError(os.MkdirAll(dir, 0700))
 		defer os.RemoveAll(dir) //nolint: errcheck
 
 		filePath := filepath.Join(dir, "testfile.txt")
-		err = os.WriteFile(filePath, []byte("hello"), 0600)
+		err := os.WriteFile(filePath, []byte("hello"), 0600)
 		assert.NoError(err)
 
 		store, err := NewStore(filePath, testPassword)
@@ -74,10 +74,10 @@ func TestNewStore(t *testing.T) {
 	// Test case 5: Non-empty directory that is not a store
 	t.Run("Non-empty non-store directory", func(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "non_empty_non_store_test")
-		err := os.MkdirAll(dir, 0700)
+		assert.NoError(os.MkdirAll(dir, 0700))
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		err = os.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
+		err := os.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
 		assert.NoError(err)
 
 		store, err := NewStore(dir, testPassword)
@@ -185,11 +185,11 @@ func TestStore_checkNewStore(t *testing.T) {
 	// Test case 3: Directory exists but is a file
 	t.Run("Directory is a file", func(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_file")
-		err := os.MkdirAll(dir, 0700)
+		assert.NoError(os.MkdirAll(dir, 0700))
 		defer os.RemoveAll(dir) //nolint: errcheck
 
 		filePath := filepath.Join(dir, "testfile.txt")
-		err = os.WriteFile(filePath, []byte("hello"), 0600)
+		err := os.WriteFile(filePath, []byte("hello"), 0600)
 		assert.NoError(err)
 
 		store := &Store{dir: filePath}
@@ -201,10 +201,10 @@ func TestStore_checkNewStore(t *testing.T) {
 	// Test case 4: Non-empty directory but not a store
 	t.Run("Non-empty non-store directory", func(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_non_empty")
-		err := os.MkdirAll(dir, 0700)
+		assert.NoError(os.MkdirAll(dir, 0700))
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		err = os.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
+		err := os.WriteFile(filepath.Join(dir, "random.txt"), []byte("data"), 0600)
 		assert.NoError(err)
 
 		store := &Store{
@@ -218,11 +218,11 @@ func TestStore_checkNewStore(t *testing.T) {
 	// Test case 5: Invalid keys directory (file instead of dir)
 	t.Run("Keys directory is a file", func(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_keys_file")
-		err := os.MkdirAll(dir, 0700)
+		assert.NoError(os.MkdirAll(dir, 0700))
 		defer os.RemoveAll(dir) //nolint: errcheck
 
 		keysDirPath := filepath.Join(dir, KeyDir)
-		err = os.WriteFile(keysDirPath, []byte("invalid"), 0600)
+		err := os.WriteFile(keysDirPath, []byte("invalid"), 0600)
 		assert.NoError(err)
 
 		store := &Store{

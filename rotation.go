@@ -9,7 +9,7 @@ import (
 
 // Rotate generates a new encryption key and re-encrypts all data
 func (s *Store) Rotate() error {
-	lk, err := s.lock(s.lockFile)
+	lk, err := s.lockNB(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("key rotation currently in process; cannot start a new one")
 	}
@@ -70,7 +70,7 @@ func (s *Store) updateFiles() {
 			return
 		}
 	}
-	lk, err := s.lock(s.lockFile)
+	lk, err := s.lockNB(s.lockFile)
 	if err != nil {
 		fmt.Printf("kdbg: Failed to grab store lock file.\n")
 		return
@@ -80,8 +80,8 @@ func (s *Store) updateFiles() {
 		// A rotation happened while checking, can't delete old keys.  Redo.
 		// TODO: Ensure this cannot loop forever.
 		fmt.Printf("kdbg: Rotation happened, re-encrypting files\n")
-			// TODO: Ensure this cannot loop forever.
-			//			s.updateFiles()
+		// TODO: Ensure this cannot loop forever.
+		//			s.updateFiles()
 		return
 	}
 	curKeyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", newKeyIndex))

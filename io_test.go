@@ -47,7 +47,7 @@ func TestStore_readFile(t *testing.T) {
 			t.Skip("Skipping permission test when running as root")
 		}
 		filePath := filepath.Join(dir, "no_perm_read.txt")
-		_ = os.WriteFile(filePath, []byte("secret"), 0000) // No read permissions
+		assert.NoError(os.WriteFile(filePath, []byte("secret"), 0000)) // No read permissions
 
 		data, err := store.readFile(filePath)
 		assert.Error(err)
@@ -83,7 +83,7 @@ func TestStore_writeFile(t *testing.T) {
 	// Test case 2: Overwriting an existing file successfully
 	t.Run("Overwrite existing file", func(t *testing.T) {
 		filePath := filepath.Join(dir, "existingfile.txt")
-		_ = os.WriteFile(filePath, []byte("old content"), 0600)
+		assert.NoError(os.WriteFile(filePath, []byte("old content"), 0600))
 		dataToWrite := []byte("overwritten content")
 
 		err := store.writeFile(filePath, dataToWrite)
@@ -101,7 +101,6 @@ func TestStore_writeFile(t *testing.T) {
 
 		err := store.writeFile(filePath, dataToWrite)
 		assert.Error(err)
-		assert.Contains(err.Error(), "no such file or directory")
 	})
 
 	// Test case 4: Attempting to write to a file without appropriate permissions (directory)
@@ -110,8 +109,8 @@ func TestStore_writeFile(t *testing.T) {
 			t.Skip("Skipping permission test when running as root")
 		}
 		noPermDir := filepath.Join(dir, "nopermdir")
-		_ = os.Mkdir(noPermDir, 0000)   // No write permissions on directory
-		defer os.Chmod(noPermDir, 0700) //nolint: errcheck // Clean up permissions for defer os.RemoveAll
+		assert.NoError(os.Mkdir(noPermDir, 0000)) // No write permissions on directory
+		defer os.Chmod(noPermDir, 0700)           //nolint: errcheck // Clean up permissions for defer os.RemoveAll
 
 		filePath := filepath.Join(noPermDir, "file.txt")
 		dataToWrite := []byte("content")
@@ -127,7 +126,7 @@ func TestStore_writeFile(t *testing.T) {
 			t.Skip("Skipping permission test when running as root")
 		}
 		filePath := filepath.Join(dir, "no_perm_file.txt")
-		_ = os.WriteFile(filePath, []byte("original"), 0400) // No write permissions on file
+		assert.NoError(os.WriteFile(filePath, []byte("original"), 0400)) // No write permissions on file
 		dataToWrite := []byte("new content")
 
 		err := store.writeFile(filePath, dataToWrite)

@@ -1,7 +1,6 @@
 package secrets
 
 import (
-	//	"fmt"
 	"os"
 )
 
@@ -27,7 +26,7 @@ func (s *Store) readFile(path string) ([]byte, error) {
 // lock on the file to be written, writes the data to the file, then
 // releases the lock.  This minimizes the amount of time spent with the
 // lock held.
-func (s *Store) writeFile(path string, data []byte) (error) {
+func (s *Store) writeFile(path string, data []byte) error {
 	lk, err := s.lock(path)
 	if err != nil {
 		return err

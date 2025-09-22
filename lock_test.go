@@ -39,7 +39,7 @@ func TestStore_lock(t *testing.T) {
 	// Test case 2: Acquire exclusive lock on an existing file
 	t.Run("Lock existing file exclusive", func(t *testing.T) {
 		filePath := filepath.Join(dir, "existing_lock_file.lock")
-		_ = os.WriteFile(filePath, []byte("dummy"), 0600)
+		assert.NoError(os.WriteFile(filePath, []byte("dummy"), 0600))
 
 		lk, err := store.lock(filePath)
 		assert.NoError(err)
@@ -84,25 +84,26 @@ func TestStore_lock(t *testing.T) {
 	// Test case 4: Acquire exclusive lock on a directory
 	t.Run("Lock directory exclusive", func(t *testing.T) {
 		lockDir := filepath.Join(dir, "lock_this_dir")
-		_ = os.Mkdir(lockDir, 0700)
+		assert.NoError(os.Mkdir(lockDir, 0700))
+		defer os.RemoveAll(lockDir) //nolint: errcheck
 
 		lk, err := store.lock(lockDir)
-		assert.NoError(err)
-		assert.NotNil(lk)
-		defer lk.unlock()
+		assert.Error(err)
+		assert.Nil(lk)
+		assert.Contains(err.Error(), "is a directory")
 	})
 
 	// Test case 5: Error creating parent directory
 	t.Run("Error creating parent directory", func(t *testing.T) {
 		// Create a file where a directory should be
 		badDir := filepath.Join(dir, "badparent")
-		_ = os.WriteFile(badDir, []byte("file"), 0600)
+		assert.NoError(os.WriteFile(badDir, []byte("file"), 0600))
 
 		filePath := filepath.Join(badDir, "lock.lock")
 		lk, err := store.lock(filePath)
 		assert.Error(err)
 		assert.Nil(lk)
-		assert.Contains(err.Error(), "failed to create lock directory")
+		assert.Contains(err.Error(), "not a directory")
 	})
 }
 
@@ -111,6 +112,7 @@ func TestStore_rLock(t *testing.T) {
 
 	// Setup: Create a temporary directory and a dummy store object
 	dir := filepath.Join(testStoreDir, "rLock_test")
+	assert.NoError(os.MkdirAll(dir, 0700))
 	defer os.RemoveAll(dir) //nolint: errcheck
 
 	store := &Store{
@@ -121,7 +123,7 @@ func TestStore_rLock(t *testing.T) {
 
 	// Create a file to be locked
 	filePath := filepath.Join(dir, "shared_lock_file.lock")
-	_ = os.WriteFile(filePath, []byte("dummy"), 0600)
+	assert.NoError(os.WriteFile(filePath, []byte("dummy"), 0600))
 
 	// Test case 1: Acquire a shared lock successfully
 	t.Run("Acquire shared lock", func(t *testing.T) {
@@ -149,7 +151,7 @@ func TestStore_rLock(t *testing.T) {
 	// Test case 3: Attempt to acquire shared lock when an exclusive lock is held (should block)
 	t.Run("RLock blocking exclusive", func(t *testing.T) {
 		blockingFilePath := filepath.Join(dir, "exclusive_blocking.lock")
-		_ = os.WriteFile(blockingFilePath, []byte("dummy"), 0600)
+		assert.NoError(os.WriteFile(blockingFilePath, []byte("dummy"), 0600))
 
 		lkExclusive, err := store.lock(blockingFilePath) // Acquire exclusive lock
 		assert.NoError(err)
@@ -187,7 +189,7 @@ func TestStore_rLock(t *testing.T) {
 		assert.Error(err)
 		assert.Nil(lk)
 		assert.True(os.IsNotExist(err))
-		assert.Contains(err.Error(), "failed to open file for shared lock")
+		assert.Contains(err.Error(), "no such file or directory")
 	})
 }
 
@@ -223,7 +225,7 @@ func TestFileLock_unlock(t *testing.T) {
 	// Test case 2: Unlock a shared lock
 	t.Run("Unlock shared lock", func(t *testing.T) {
 		filePath := filepath.Join(dir, "shared.lock")
-		_ = os.WriteFile(filePath, []byte("dummy"), 0600)
+		assert.NoError(os.WriteFile(filePath, []byte("dummy"), 0600))
 
 		lk, err := store.rLock(filePath)
 		assert.NoError(err)

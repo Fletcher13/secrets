@@ -1,7 +1,7 @@
 package secrets
 
 import (
-	"fmt"
+	//	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -33,30 +33,30 @@ func (s *Store) writeLock(path string, bits int) (*fileLock, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
 		if err = os.MkdirAll(filepath.Dir(path), s.dirPerm); err != nil {
-			fmt.Printf("kdbg: failed to create lock directory: %v\n", err)
+			//			fmt.Printf("kdbg: failed to create lock directory: %v\n", err)
 			return nil, err
 		}
 		f, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
 		if err != nil {
-			fmt.Printf("kdbg1: failed to open lock file: %v\n", err)
+			//			fmt.Printf("kdbg1: failed to open lock file: %v\n", err)
 			return nil, err
 		}
 	} else if stat.IsDir() {
 		f, err = os.OpenFile(path, os.O_RDWR, s.dirPerm)
 		if err != nil {
-			fmt.Printf("kdbg2: failed to open lock file: %v\n", err)
+			//			fmt.Printf("kdbg2: failed to open lock file: %v\n", err)
 			return nil, err
 		}
 	} else {
 		f, err = os.OpenFile(path, os.O_RDWR, s.filePerm)
 		if err != nil {
-			fmt.Printf("kdbg3: failed to open lock file: %v\n", err)
+			//			fmt.Printf("kdbg3: failed to open lock file: %v\n", err)
 			return nil, err
 		}
 	}
 	if err := syscall.Flock(int(f.Fd()), bits); err != nil {
 		_ = f.Close()
-		fmt.Printf("kdbg: failed to acquire exclusive lock: %v\n", err)
+		//		fmt.Printf("kdbg: failed to acquire exclusive lock: %v\n", err)
 		return nil, err
 	}
 	return &fileLock{f: f}, nil
@@ -81,12 +81,12 @@ func (s *Store) rLockNB(path string) (*fileLock, error) {
 func (s *Store) readLock(path string, bits int) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)
 	if err != nil {
-		fmt.Printf("kdbg: failed to open file for shared lock: %v\n", err)
+		//		fmt.Printf("kdbg: failed to open file for shared lock: %v\n", err)
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), bits); err != nil {
 		_ = f.Close()
-		fmt.Printf("kdbg: failed to acquire shared lock: %v\n", err)
+		//		fmt.Printf("kdbg: failed to acquire shared lock: %v\n", err)
 		return nil, err
 	}
 	return &fileLock{f: f}, nil

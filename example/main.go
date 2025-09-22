@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/fletcher13/secrets"
 )
@@ -69,6 +70,7 @@ func main() {
 		log.Fatalf("Error rotating keys: %v", err)
 	}
 	fmt.Println("Key rotation completed successfully")
+	time.Sleep(100 * time.Millisecond) // Wait for update to rotate data.
 
 	// Verify data is still accessible after rotation
 	loadedData, err = store.Load(secretPath)

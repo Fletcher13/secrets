@@ -314,7 +314,7 @@ func (s *Store) newKey(index uint8) ([]byte, error) {
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
 	// Save key.
-	fmt.Printf("kdbg: Saving key %s\n", keyPath)
+	//	fmt.Printf("kdbg: Saving key %s\n", keyPath)
 	err = s.writeFile(keyPath, data)
 	if err != nil {
 		return nil, err

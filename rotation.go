@@ -49,7 +49,7 @@ func (s *Store) updateFiles() {
 		return
 	}
 	for _, file := range files {
-		fmt.Printf("kdbg: Re-encrypting %s\n", file)
+		//		fmt.Printf("kdbg: Re-encrypting %s\n", file)
 		s.reencryptFile(file)
 	}
 
@@ -58,13 +58,13 @@ func (s *Store) updateFiles() {
 	// Get list of all files again, just to make sure there weren't new ones.
 	files, err = s.listDataFiles()
 	if err != nil {
-		fmt.Printf("kdbg: ListDataFiles failed.\n")
+		//		fmt.Printf("kdbg: ListDataFiles failed.\n")
 		return
 	}
 	for _, file := range files {
 		i, err := s.getKeyIndex(file)
 		if err != nil || i != newKeyIndex {
-			fmt.Printf("kdbg: Re-updating because %s has wrong key index.\n", file)
+			//			fmt.Printf("kdbg: Re-updating because %s has wrong key index.\n", file)
 			// TODO: Ensure this cannot loop forever.
 			//			s.updateFiles() // Didn't get them all, redo the update.
 			return
@@ -72,14 +72,14 @@ func (s *Store) updateFiles() {
 	}
 	lk, err := s.lockNB(s.lockFile)
 	if err != nil {
-		fmt.Printf("kdbg: Failed to grab store lock file.\n")
+		//		fmt.Printf("kdbg: Failed to grab store lock file.\n")
 		return
 	}
 	defer lk.unlock()
 	if s.currentKeyIndex != newKeyIndex {
 		// A rotation happened while checking, can't delete old keys.  Redo.
 		// TODO: Ensure this cannot loop forever.
-		fmt.Printf("kdbg: Rotation happened, re-encrypting files\n")
+		//		fmt.Printf("kdbg: Rotation happened, re-encrypting files\n")
 		// TODO: Ensure this cannot loop forever.
 		//			s.updateFiles()
 		return
@@ -87,12 +87,12 @@ func (s *Store) updateFiles() {
 	curKeyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", newKeyIndex))
 	allKeys, err := filepath.Glob(filepath.Join(s.keyDir, "key*"))
 	if err != nil {
-		fmt.Printf("kdbg: Glob failed.\n")
+		//		fmt.Printf("kdbg: Glob failed.\n")
 		return
 	}
 	for _, keyFile := range allKeys {
 		if keyFile != curKeyPath {
-			fmt.Printf("kdbg: Removing key %s\n", keyFile)
+			//			fmt.Printf("kdbg: Removing key %s\n", keyFile)
 			_ = os.Remove(keyFile)
 		}
 	}
@@ -126,7 +126,7 @@ func (s *Store) listDataFiles() ([]string, error) {
 func (s *Store) reencryptFile(path string) {
 	lk, err := s.lock(path)
 	if err != nil {
-		fmt.Printf("kdbg: Failed to lock %s\n", path)
+		//		fmt.Printf("kdbg: Failed to lock %s\n", path)
 		return
 	}
 	defer lk.unlock()
@@ -134,14 +134,14 @@ func (s *Store) reencryptFile(path string) {
 	// Read and decrypt with old key
 	encryptedData, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Printf("kdbg: Failed to read %s\n", path)
+		//		fmt.Printf("kdbg: Failed to read %s\n", path)
 		// Failed to read file.  Delete it.
 		//		_ = s.Delete(relPath)
 		return
 	}
 
 	if len(encryptedData) < 1 {
-		fmt.Printf("kdbg: %s is empty\n", path)
+		//		fmt.Printf("kdbg: %s is empty\n", path)
 		// Invalid file format, so no useful data.  Delete this file.
 		//		_ = s.Delete(relPath)
 		return
@@ -150,16 +150,16 @@ func (s *Store) reencryptFile(path string) {
 	oldKeyIndex := encryptedData[0]
 
 	if oldKeyIndex == s.currentKeyIndex {
-		fmt.Printf("kdbg: %s encrypted with current key %d\n", path, oldKeyIndex)
+		//		fmt.Printf("kdbg: %s encrypted with current key %d\n", path, oldKeyIndex)
 		// Already updated, no need to re-encrypt.
 		return
 	}
-	fmt.Printf("kdbg: Re-encrypting %s from key %d to key %d\n", path,
-		oldKeyIndex, s.currentKeyIndex)
+	//	fmt.Printf("kdbg: Re-encrypting %s from key %d to key %d\n", path,
+	//		oldKeyIndex, s.currentKeyIndex)
 
 	data, err := s.decryptData(encryptedData)
 	if err != nil {
-		fmt.Printf("kdbg: Failed to decrypt %s\n", path)
+		//		fmt.Printf("kdbg: Failed to decrypt %s\n", path)
 		// Failed to decrypt, so this data is useless.  Delete this file.
 		//		_ = s.Delete(relPath)
 		return
@@ -168,17 +168,17 @@ func (s *Store) reencryptFile(path string) {
 	// Encrypt with new key
 	newEncryptedData, err := s.encryptData(data)
 	if err != nil {
-		fmt.Printf("kdbg: Failed to encrypt %s\n", path)
+		//		fmt.Printf("kdbg: Failed to encrypt %s\n", path)
 		// failed to encrypt with new key, just return leaving file
 		// encrypted by old key
 		return
 	}
 
 	// Write back to file
-	err = os.WriteFile(path, newEncryptedData, s.filePerm)
-	if err != nil {
-		fmt.Printf("kdbg: Failed to write newly-encrypted %s\n", path)
-	}
+	_ = os.WriteFile(path, newEncryptedData, s.filePerm)
+	//	if err != nil {
+		//		fmt.Printf("kdbg: Failed to write newly-encrypted %s\n", path)
+	//	}
 }
 
 // rotateWatch does an inotify watch on the currentKey file to see if

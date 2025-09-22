@@ -182,7 +182,7 @@ func (s *Store) getKeyIndex(file string) (uint8, error) {
 		return 0, fmt.Errorf("failed to read file %s: %w", file, err)
 	}
 	if len(encryptedData) < 1 {
-		return 0, fmt.Errorf("Corrupt file %s: %w", file, err)
+		return 0, fmt.Errorf("corrupt file %s: %w", file, err)
 	}
 	return encryptedData[0], nil
 }

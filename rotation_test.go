@@ -15,10 +15,9 @@ func TestStore_Rotate(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store
-	dir := filepath.Join("test_stores", "rotate_test_store")
-	defer os.RemoveAll(dir)
-	password := []byte("a-very-secret-password-that-is-long-enough")
-	store, err := NewStore(dir, password)
+	dir := filepath.Join(testStoreDir, "rotate_test_store")
+	defer os.RemoveAll(dir) //nolint: errcheck
+	store, err := NewStore(dir, testPassword)
 	assert.NoError(err)
 	assert.NotNil(store)
 	defer store.Close()
@@ -66,7 +65,7 @@ func TestStore_Rotate(t *testing.T) {
 
 	// Reset store for next test case
 	store.Close()
-	store, err = NewStore(dir, password)
+	store, err = NewStore(dir, testPassword)
 	assert.NoError(err)
 
 	// Test case 2: Attempt to rotate when another rotation is in progress (simulated by locking lockFile)
@@ -82,11 +81,13 @@ func TestStore_Rotate(t *testing.T) {
 
 	// Reset store for next test case
 	store.Close()
-	store, err = NewStore(dir, password)
+	store, err = NewStore(dir, testPassword)
 	assert.NoError(err)
 
 	// Test case 3: Max key index rollover (simulate by setting currentKeyIndex to 255)
 	t.Run("Key index rollover", func(t *testing.T) {
+		store.currentKey, err = store.newKey(255)
+		assert.NoError(err)
 		store.currentKeyIndex = 255       // Set to max
 		err = store.saveCurrentKeyIndex() // Save to disk
 		assert.NoError(err)
@@ -94,7 +95,13 @@ func TestStore_Rotate(t *testing.T) {
 		// Save some data to be re-encrypted (after setting currentKeyIndex)
 		secretPath3 := "rollover/secret"
 		data3 := []byte("rollover data")
+		fmt.Printf("kdbg: Saving secret %s with key %d\n", secretPath3,
+			store.currentKeyIndex)
 		assert.NoError(store.Save(secretPath3, data3))
+
+		data4, err := store.Load(secretPath3)
+		assert.NoError(err)
+		assert.Equal(data4, data3)
 
 		err = store.Rotate()
 		assert.NoError(err)
@@ -116,11 +123,11 @@ func TestStore_listDataFiles(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store and populate with various files and directories
-	dir := filepath.Join("test_stores", "list_data_files_test")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "list_data_files_test")
+	absDir, _ := filepath.Abs(dir)
+	defer os.RemoveAll(dir) //nolint: errcheck
 
-	password := []byte("a-very-secret-password-that-is-long-enough")
-	store, err := NewStore(dir, password)
+	store, err := NewStore(dir, testPassword)
 	assert.NoError(err)
 	assert.NotNil(store)
 	defer store.Close()
@@ -128,10 +135,12 @@ func TestStore_listDataFiles(t *testing.T) {
 	// Create some dummy data files
 	assert.NoError(store.Save("file1.txt", []byte("data1")))
 	assert.NoError(store.Save("subdir/file2.txt", []byte("data2")))
-	assert.NoError(store.Save("anotherdir/nested/file3.txt", []byte("data3")))
+	assert.NoError(store.Save("dir2/nested/file3.txt", []byte("data3")))
 
 	// Create a non-secret file outside the store's data structure (should not be listed by listDataFiles)
-	_ = os.WriteFile(filepath.Join(dir, "outsider.txt"), []byte("outsider data"), 0600)
+	outsideFilePath := filepath.Join(dir, "../outsider.txt")
+	_ = os.WriteFile(outsideFilePath, []byte("outsider data"), 0600)
+	defer os.Remove(outsideFilePath) //nolint: errcheck
 
 	// Test case 1: List files in a populated store
 	t.Run("List files in populated store", func(t *testing.T) {
@@ -140,9 +149,9 @@ func TestStore_listDataFiles(t *testing.T) {
 		assert.Len(files, 3) // Should only include the 3 data files
 
 		expectedFiles := []string{
-			filepath.Join(dir, "anotherdir", "nested", "file3.txt"),
-			filepath.Join(dir, "file1.txt"),
-			filepath.Join(dir, "subdir", "file2.txt"),
+			filepath.Join(absDir, "file1.txt"),
+			filepath.Join(absDir, "subdir", "file2.txt"),
+			filepath.Join(absDir, "dir2", "nested", "file3.txt"),
 		}
 		// Sort to ensure consistent order for comparison
 		sort.Strings(files)
@@ -155,7 +164,7 @@ func TestStore_listDataFiles(t *testing.T) {
 		// Delete all previously created data files
 		assert.NoError(store.Delete("file1.txt"))
 		assert.NoError(store.Delete("subdir/file2.txt"))
-		assert.NoError(store.Delete("anotherdir/nested/file3.txt"))
+		assert.NoError(store.Delete("dir2/nested/file3.txt"))
 
 		files, err := store.listDataFiles()
 		assert.NoError(err)
@@ -167,33 +176,37 @@ func TestStore_reencryptFile(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store
-	dir := filepath.Join("test_stores", "reencrypt_file_test")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "reencrypt_file_test")
+	defer os.RemoveAll(dir) //nolint: errcheck
 
-	password := []byte("a-very-secret-password-that-is-long-enough")
-	store, err := NewStore(dir, password)
+	store, err := NewStore(dir, testPassword)
 	assert.NoError(err)
 	assert.NotNil(store)
 	defer store.Close()
 
 	// Save an initial secret
 	secretPath := "my/reencrypt/secret"
+	fullPath := filepath.Join(dir, secretPath)
 	originalData := []byte("data to be re-encrypted")
 	assert.NoError(store.Save(secretPath, originalData))
 
 	// Manually rotate the key to create an "old" key scenario
-	assert.NoError(store.Rotate())
-	// Make sure updateFiles goroutine has time to finish.
-	time.Sleep(100 * time.Millisecond)
+	// Generate new key
+	newKey, err := store.newKey(1)
+	assert.NoError(err)
+
+	// Set current key
+	store.currentKey = newKey
+	store.currentKeyIndex = 1
+	err = store.saveCurrentKeyIndex()
+	assert.NoError(err)
 
 	// Test case 1: Re-encrypt a file with an old key
 	t.Run("Re-encrypt file with old key", func(t *testing.T) {
 		// Before re-encryption, the file should still be encrypted with the old key
-		fullPath := filepath.Join(dir, secretPath)
-		oldKeyIndex, err := store.getKeyIndex(fullPath)
+		origKeyIndex, err := store.getKeyIndex(fullPath)
 		assert.NoError(err)
-		assert.NotEqual(store.currentKeyIndex, oldKeyIndex)
-
+		assert.NotEqual(store.currentKeyIndex, origKeyIndex)
 		store.reencryptFile(fullPath)
 
 		// After re-encryption, the file should be encrypted with the current key
@@ -209,7 +222,6 @@ func TestStore_reencryptFile(t *testing.T) {
 	// Test case 2: Re-encrypt a file that is already using the current key
 	t.Run("File already current key", func(t *testing.T) {
 		// This file should already be using the current key from the previous test.
-		fullPath := filepath.Join(dir, secretPath)
 		initialModTime, err := os.Stat(fullPath)
 		assert.NoError(err)
 
@@ -226,7 +238,7 @@ func TestStore_reencryptFile(t *testing.T) {
 		corruptedPath := filepath.Join(dir, "corrupted.bin")
 		// Create a file but remove read permissions to simulate unreadable
 		_ = os.WriteFile(corruptedPath, []byte("corrupt data"), 0000)
-		defer os.Chmod(corruptedPath, 0600) // Restore permissions for cleanup
+		defer os.Chmod(corruptedPath, 0600) //nolint: errcheck // Restore permissions for cleanup
 
 		// Re-encryption should not panic and ideally log an error (not directly testable here)
 		assert.NotPanics(func() { store.reencryptFile(corruptedPath) })

@@ -13,8 +13,8 @@ func TestStore_lock(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir := filepath.Join("test_stores", "lock_test")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "lock_test")
+	defer os.RemoveAll(dir) //nolint: errcheck
 
 	store := &Store{
 		dir:      dir,
@@ -110,8 +110,8 @@ func TestStore_rLock(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir := filepath.Join("test_stores", "rLock_test")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "rLock_test")
+	defer os.RemoveAll(dir) //nolint: errcheck
 
 	store := &Store{
 		dir:      dir,
@@ -195,8 +195,8 @@ func TestFileLock_unlock(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir := filepath.Join("test_stores", "unlock_test")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "unlock_test")
+	defer os.RemoveAll(dir) //nolint: errcheck
 
 	store := &Store{
 		dir:      dir,

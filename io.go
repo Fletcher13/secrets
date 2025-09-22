@@ -1,7 +1,7 @@
 package secrets
 
 import (
-	"fmt"
+	//	"fmt"
 	"os"
 )
 
@@ -17,7 +17,7 @@ func (s *Store) readFile(path string) ([]byte, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
+		return nil, err
 	}
 
 	return data, nil

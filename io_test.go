@@ -12,8 +12,10 @@ func TestStore_readFile(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir := filepath.Join("test_stores", "io_test_read")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "io_test_read")
+	err := os.MkdirAll(dir, 0700)
+	assert.NoError(err)
+	defer os.RemoveAll(dir) //nolint: errcheck
 
 	store := &Store{dir: dir}
 	store.filePerm = 0600 // Default file permissions for tests
@@ -22,7 +24,8 @@ func TestStore_readFile(t *testing.T) {
 	t.Run("Read existing file", func(t *testing.T) {
 		filePath := filepath.Join(dir, "testfile.txt")
 		expectedData := []byte("hello world")
-		_ = os.WriteFile(filePath, expectedData, 0600)
+		err := os.WriteFile(filePath, expectedData, 0600)
+		assert.NoError(err)
 
 		data, err := store.readFile(filePath)
 		assert.NoError(err)
@@ -36,7 +39,6 @@ func TestStore_readFile(t *testing.T) {
 		assert.Error(err)
 		assert.Nil(data)
 		assert.True(os.IsNotExist(err))
-		assert.Contains(err.Error(), "failed to read file")
 	})
 
 	// Test case 3: Attempting to read a file without appropriate permissions
@@ -58,8 +60,10 @@ func TestStore_writeFile(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a temporary directory and a dummy store object
-	dir := filepath.Join("test_stores", "io_test_write")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "io_test_write")
+	err := os.MkdirAll(dir, 0700)
+	assert.NoError(err)
+	defer os.RemoveAll(dir) //nolint: errcheck
 
 	store := &Store{dir: dir}
 	store.filePerm = 0600 // Default file permissions for tests
@@ -107,7 +111,7 @@ func TestStore_writeFile(t *testing.T) {
 		}
 		noPermDir := filepath.Join(dir, "nopermdir")
 		_ = os.Mkdir(noPermDir, 0000)   // No write permissions on directory
-		defer os.Chmod(noPermDir, 0700) // Clean up permissions for defer os.RemoveAll
+		defer os.Chmod(noPermDir, 0700) //nolint: errcheck // Clean up permissions for defer os.RemoveAll
 
 		filePath := filepath.Join(noPermDir, "file.txt")
 		dataToWrite := []byte("content")

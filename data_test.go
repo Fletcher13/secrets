@@ -12,11 +12,10 @@ func TestStore_SaveLoadDelete(t *testing.T) {
 	assert := assert.New(t)
 
 	// Setup: Create a new store
-	dir := filepath.Join("test_stores", "data_test_store")
-	defer os.RemoveAll(dir)
+	dir := filepath.Join(testStoreDir, "data_test_store")
+	defer os.RemoveAll(dir) //nolint: errcheck
 
-	password := []byte("a-very-secret-password-that-is-long-enough")
-	store, err := NewStore(dir, password)
+	store, err := NewStore(dir, testPassword)
 	assert.NoError(err)
 	assert.NotNil(store)
 	defer store.Close()
@@ -140,26 +139,25 @@ func TestStore_SaveLoadDelete(t *testing.T) {
 func TestDeriveKeyFromPassword(t *testing.T) {
 	assert := assert.New(t)
 
-	password := []byte("my_secret_password")
 	salt := []byte("a_random_salt_for_key_derivation_32bytes")
 	shortSalt := []byte("short_salt")
 
 	// Test case 1: Successful key derivation with valid salt
 	t.Run("Successful key derivation", func(t *testing.T) {
-		key, err := deriveKeyFromPassword(password, salt)
+		key, err := deriveKeyFromPassword(testPassword, salt)
 		assert.NoError(err)
 		assert.NotNil(key)
 		assert.Len(key, Argon2KeyLen)
 
 		// Ensure deterministic output for same input
-		key2, err := deriveKeyFromPassword(password, salt)
+		key2, err := deriveKeyFromPassword(testPassword, salt)
 		assert.NoError(err)
 		assert.Equal(key, key2)
 	})
 
 	// Test case 2: Short salt (should return error)
 	t.Run("Short salt", func(t *testing.T) {
-		key, err := deriveKeyFromPassword(password, shortSalt)
+		key, err := deriveKeyFromPassword(testPassword, shortSalt)
 		assert.Error(err)
 		assert.Nil(key)
 		assert.Contains(err.Error(), "salt must be at least 32 bytes")

@@ -32,6 +32,7 @@ type Store struct {
 	currentKeyIndex uint8
 	dirPerm         os.FileMode
 	filePerm        os.FileMode
+	stopChan        chan struct{}
 }
 
 // KeyData represents the structure of a key file
@@ -68,6 +69,7 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 		saltFile:      filepath.Join(storePath, KeyDir, PrimSaltFile),
 		curKeyIdxFile: filepath.Join(storePath, KeyDir, CurKeyIdxFile),
 		lockFile:      filepath.Join(storePath, KeyDir, LockFile),
+		stopChan:      make(chan struct{}),
 	}
 
 	isNewStore, err := store.checkNewStore()
@@ -90,13 +92,26 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 	}
 
 	// Start watcher for key rotation done by other processes
-	go store.rotateWatch()
+	err = store.startRotateWatch()
+	if err != nil {
+		return nil, err
+	}
 
 	return store, nil
 }
 
 // Close closes the store and cleans up resources
 func (s *Store) Close() {
+	// Send stop signal to rotateWatch goroutine
+	if s.stopChan != nil {
+		select {
+		case <-s.stopChan:
+			// Channel already closed, do nothing
+		default:
+			close(s.stopChan)
+		}
+	}
+
 	// Clear sensitive data from memory
 	Wipe(s.primaryKey)
 	Wipe(s.currentKey)
@@ -106,6 +121,26 @@ func (s *Store) Close() {
 	s.keyDir = ""
 	s.saltFile = ""
 	s.curKeyIdxFile = ""
+}
+
+// Passwd re-encrypts the decryption key on-disk with a new password.
+// It will write zeroes over the old on-disk key before writing the new
+// key, just to ensure that the old password can no longer be used to
+// decrypt the key to this store.
+//
+// WARNING:  If multiple processes are accessing the same Store, processes
+// other than the one that called this function will lose access to the
+// store until they re-open it with the new password.
+func (s *Store) Passwd(newpassword []byte) (error) {
+	// TODO: Write this function.
+	// Grab the rotation lock to ensure nothing is reading or writing
+	// the keys.  Defer the release of the lock.
+	// For each key:
+	//   Load the key with the old password.
+	//   Write zeroes over the original file.
+	//   Encrypt the key with the new password.
+	//   Write the newly encrypted version over top of the original file.
+	return nil
 }
 
 // Check if this is an existing store or not.
@@ -192,7 +227,7 @@ func (s *Store) createNewStore(password []byte) error {
 }
 
 func (s *Store) openExistingStore(password []byte) error {
-	lk, err := s.rLockNB(s.lockFile)
+	lk, err := s.rLock(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
 	}
@@ -369,12 +404,17 @@ func (s *Store) loadKey(index uint8) ([]byte, error) {
 // checkForOldKeys checks for inconsistent key usage and recovers if needed
 func (s *Store) checkForOldKeys() error {
 	// Get list of key files
+	lk, err := s.rLock(s.lockFile)
+	if err != nil {
+		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
+	}
 	keys, err := filepath.Glob(filepath.Join(s.keyDir, "key*"))
+	lk.unlock()
 	if err != nil {
 		return fmt.Errorf("failed to read keys directory: %w", err)
 	}
 	if len(keys) > 1 {
-		go s.updateFiles()
+		go s.updateFiles(0)
 	}
 	return nil
 }

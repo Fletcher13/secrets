@@ -70,6 +70,7 @@ func (s *Store) rLock(path string) (*fileLock, error) {
 	return s.readLock(path, syscall.LOCK_SH)
 }
 
+/*
 // rLockNB acquires a shared lock on the given file path. The file
 // must exist.  This call is non-blocking, so if the lock is already
 // held, an error will be returned.  The returned lock must be released
@@ -77,6 +78,7 @@ func (s *Store) rLock(path string) (*fileLock, error) {
 func (s *Store) rLockNB(path string) (*fileLock, error) {
 	return s.readLock(path, syscall.LOCK_SH|syscall.LOCK_NB)
 }
+*/
 
 func (s *Store) readLock(path string, bits int) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, s.filePerm)

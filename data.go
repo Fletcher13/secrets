@@ -198,6 +198,8 @@ func deriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
 	// Use Argon2id for key derivation
 	key := argon2.IDKey(password, salt, Argon2Time, Argon2Memory, Argon2Threads, Argon2KeyLen)
 
+	Wipe(password)
+
 	return key, nil
 }
 

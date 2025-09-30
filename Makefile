@@ -9,7 +9,15 @@ build:
 test:
 	@echo "Running tests..."
 	rm -rf test_*
-	go test -v --cover ./...
+	go test -v --cover `go list ./... | egrep -v 'example'`
+
+# Run coverage report
+cover:
+	@echo "Running coverage report..."
+	mkdir -p cov
+	rm -rf test_*
+	go test -v --cover -coverprofile=cov/coverage.out `go list ./... | egrep -v 'example'`
+	go tool cover -html=cov/coverage.out -o cov/coverage.html
 
 # Run example
 example:
@@ -19,8 +27,7 @@ example:
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
-	rm -rf test_*
-	rm -rf example_secret_store
+	rm -rf test_* cov example_secret_store
 	go clean
 
 # Download dependencies to vendor directory

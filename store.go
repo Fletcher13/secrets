@@ -135,6 +135,10 @@ func (s *Store) Close() {
 // other than the one that called this function will lose access to the
 // store until they re-open it with the new password.
 func (s *Store) Passwd(newpassword []byte) error {
+	if len(newpassword) == 0 {
+		return fmt.Errorf("password must not be empty")
+	}
+
 	lk, err := s.lockNB(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("store at %s is being modified: %w", s.dir, err)
@@ -195,7 +199,6 @@ func (s *Store) Passwd(newpassword []byte) error {
 			return fmt.Errorf("failed to write key %s: %w", keyPath, err)
 		}
 	}
-
 	oldDir := filepath.Join(s.dir, OldPwDir)
 	err = os.Rename(s.keyDir, oldDir)
 	if err != nil {
@@ -342,7 +345,7 @@ func (s *Store) openExistingStore(password []byte) error {
 
 	// In case a Passwd() call was interrupted in the middle, blow away
 	// any existing new password directory.
-	_ = os.Remove(filepath.Join(s.dir, NewPwDir))
+	_ = os.RemoveAll(filepath.Join(s.dir, NewPwDir))
 
 	return nil
 }
@@ -529,11 +532,13 @@ func (s *Store) checkForOldKeys() error {
 
 // Removes .newpw directory if it exists.
 func passwdCleanup(dir string) {
-	_ = os.Remove(dir)
+	_ = os.RemoveAll(dir)
 }
 
 // zeroOldKeys writes zeroes over top of all old key files.
 func zeroOldKeys(dir string) {
+	defer os.RemoveAll(dir) //nolint: errcheck
+
 	keys, err := filepath.Glob(filepath.Join(dir, "key*"))
 	if err != nil {
 		// Nothing we can do to zero the keys.
@@ -556,5 +561,4 @@ func zeroOldKeys(dir string) {
 		zeroes := make([]byte, st.Size())
 		_, _ = f.WriteAt(zeroes, 0)
 	}
-	_ = os.Remove(dir)
 }

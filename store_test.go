@@ -119,38 +119,89 @@ func TestStore_Close(t *testing.T) {
 	assert.Equal("", store.curKeyIdxFile)
 }
 
-func TestStore_checkNewStore(t *testing.T) {
+func TestStore_Passwd(t *testing.T) {
 	assert := assert.New(t)
 
-	// Helper function to create a new store for testing
-	createTestStore := func(dir string, password []byte) (*Store, error) {
-		store := &Store{
-			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
-			primaryKey:    make([]byte, 32),
-		}
-		store.dirPerm = 0700
-		store.filePerm = 0600
+	dir := filepath.Join(testStoreDir, "passwd")
+	defer os.RemoveAll(dir) //nolint: errcheck
 
-		if err := os.MkdirAll(store.keyDir, store.dirPerm); err != nil {
-			return nil, err
-		}
+	store, err := NewStore(dir, testPassword)
+	assert.NoError(err)
+	newPwDirPath := filepath.Join(dir, NewPwDir)
 
-		if err := store.createPrimaryKey(password); err != nil {
-			return nil, err
-		}
-		_, err := store.newKey(0)
-		if err != nil {
-			return nil, err
-		}
-		store.currentKeyIndex = 0
-		if err := store.saveCurrentKeyIndex(); err != nil {
-			return nil, err
-		}
-		return store, nil
+	// Test case 1: Successful passwd
+	t.Run("Passwd Success", func(t *testing.T) {
+		err := store.Passwd([]byte("new_password"))
+		assert.NoError(err)
+		assert.False(checkDirExists(newPwDirPath))
+	})
+
+	// Test case 2: Empty new password
+	t.Run("Passwd Empty Password", func(t *testing.T) {
+		err := store.Passwd([]byte(""))
+		assert.Error(err)
+		assert.False(checkDirExists(newPwDirPath))
+	})
+
+	// Test case 3: Store locked
+	t.Run("Passwd locked", func(t *testing.T) {
+		lk, err := store.lock(store.lockFile)
+		assert.NoError(err)
+		defer lk.unlock()
+		err = store.Passwd(testPassword)
+		assert.Error(err)
+		assert.Contains(err.Error(), "is being modified")
+		assert.False(checkDirExists(newPwDirPath))
+	})
+
+	// Test case 4: Successful passwd
+	t.Run("Passwd Success", func(t *testing.T) {
+		err := store.Passwd([]byte("new_password"))
+		assert.NoError(err)
+		assert.False(checkDirExists(newPwDirPath))
+	})
+}
+
+func checkDirExists(dir string) bool {
+	st, err := os.Stat(dir)
+	if err == nil && st.IsDir() {
+		return true
 	}
+	return false
+}
+
+// Helper function to create a new store for testing
+func createTestStore(dir string, password []byte) (*Store, error) {
+	store := &Store{
+		dir:           dir,
+		keyDir:        filepath.Join(dir, KeyDir),
+		saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
+		curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+		primaryKey:    make([]byte, 32),
+	}
+	store.dirPerm = 0700
+	store.filePerm = 0600
+
+	if err := os.MkdirAll(store.keyDir, store.dirPerm); err != nil {
+		return nil, err
+	}
+
+	if err := store.createPrimaryKey(password); err != nil {
+		return nil, err
+	}
+	_, err := store.newKey(0)
+	if err != nil {
+		return nil, err
+	}
+	store.currentKeyIndex = 0
+	if err := store.saveCurrentKeyIndex(); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func TestStore_checkNewStore(t *testing.T) {
+	assert := assert.New(t)
 
 	// Test case 1: Empty directory (should be a new store)
 	t.Run("Empty directory", func(t *testing.T) {

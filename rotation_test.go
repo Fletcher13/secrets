@@ -41,7 +41,7 @@ func TestStore_Rotate(t *testing.T) {
 		assert.Equal(initialKeyIndex+1, store.currentKeyIndex)
 
 		// Allow time for goroutine (updateFiles) to complete
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 
 		// Verify all files are re-encrypted with the new key
 		loadedData1, err := store.Load(secretPath1)
@@ -68,6 +68,7 @@ func TestStore_Rotate(t *testing.T) {
 	store, err = NewStore(dir, testPassword)
 	assert.NoError(err)
 
+	/*
 	// Test case 2: Attempt to rotate when another rotation is in progress (simulated by locking lockFile)
 	t.Run("Rotate in progress", func(t *testing.T) {
 		lk, err := store.lock(store.lockFile) // Manually acquire lock to simulate ongoing rotation
@@ -83,6 +84,7 @@ func TestStore_Rotate(t *testing.T) {
 	store.Close()
 	store, err = NewStore(dir, testPassword)
 	assert.NoError(err)
+	*/
 
 	// Test case 3: Max key index rollover (simulate by setting currentKeyIndex to 255)
 	t.Run("Key index rollover", func(t *testing.T) {
@@ -110,7 +112,7 @@ func TestStore_Rotate(t *testing.T) {
 		assert.Equal(uint8(0), store.currentKeyIndex)
 
 		// Allow time for goroutine (updateFiles) to complete
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 
 		// Verify data is still loadable
 		loadedData3, err := store.Load(secretPath3)

@@ -15,17 +15,24 @@ import (
 const (
 	// Argon2id key derivation constants
 	// These parameters provide strong security while being reasonably fast
-	Argon2Time    = 3         // Number of iterations
-	Argon2Memory  = 64 * 1024 // 64 MB memory usage
-	Argon2Threads = 4         // Number of threads
-	Argon2KeyLen  = 32        // Output key length
+	argon2Time    = uint32(3)         // Number of iterations
+	argon2Memory  = uint32(48 * 1024) // 48 MB memory usage
+	argon2Threads = uint8(4)          // Number of threads
+	argon2KeyLen  = uint32(32)        // Output key length
+	saltLength    = 16                // Number of bytes for salt == 128 bits
 )
 
 // Save stores sensitive data at the given path
 func (s *Store) Save(path string, data []byte) error {
-	// Clean and validate path
-	fullPath := filepath.Clean(filepath.Join(s.dir, path))
-	if !strings.HasPrefix(fullPath, s.dir) {
+	if s == nil {
+		return fmt.Errorf("no store")
+	}
+	// Validate path
+	if path == "" {
+		return fmt.Errorf("path must not be empty")
+	}
+	fullPath := filepath.Join(s.dir, path)
+	if !strings.HasPrefix(fullPath, s.dir+"/") {
 		return fmt.Errorf("path outside store hierarchy: %s", path)
 	}
 
@@ -33,6 +40,12 @@ func (s *Store) Save(path string, data []byte) error {
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, s.dirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
+	}
+	stat, err := os.Stat(fullPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("error checking %s: %w", path, err)
+	} else if err == nil && stat.IsDir() {
+		return fmt.Errorf("secret %s is a directory", path)
 	}
 
 	// Encrypt data
@@ -46,9 +59,15 @@ func (s *Store) Save(path string, data []byte) error {
 
 // Load retrieves sensitive data from the given path
 func (s *Store) Load(path string) ([]byte, error) {
-	// Clean and validate path
-	fullPath := filepath.Clean(filepath.Join(s.dir, path))
-	if !strings.HasPrefix(fullPath, s.dir) {
+	if s == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	// Validate path
+	if path == "" {
+		return nil, fmt.Errorf("path must not be empty")
+	}
+	fullPath := filepath.Join(s.dir, path)
+	if !strings.HasPrefix(fullPath, s.dir+"/") {
 		return nil, fmt.Errorf("path outside store hierarchy: %s", path)
 	}
 
@@ -72,14 +91,19 @@ func (s *Store) Load(path string) ([]byte, error) {
 
 // Delete removes sensitive data from the given path
 func (s *Store) Delete(path string) error {
+	if s == nil {
+		return fmt.Errorf("no store")
+	}
 	// Clean and validate path
 	fullPath := filepath.Clean(filepath.Join(s.dir, path))
 	if !strings.HasPrefix(fullPath, s.dir) {
 		return fmt.Errorf("path outside store hierarchy: %s", path)
 	}
 
-	// Require that the file exists; do not create it when locking
 	if _, err := os.Stat(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil // The file wasn't there to begin with.
+		}
 		return err
 	}
 
@@ -191,21 +215,20 @@ func (s *Store) getKeyIndex(file string) (uint8, error) {
 // Argon2id is the recommended password hashing function by OWASP and provides
 // strong resistance against both side-channel and timing attacks.
 func deriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
-	if len(salt) < 32 {
-		return nil, fmt.Errorf("salt must be at least 32 bytes")
+	if len(salt) < saltLength {
+		return nil, fmt.Errorf("salt must be at least %d bytes", saltLength)
 	}
 
 	// Use Argon2id for key derivation
-	key := argon2.IDKey(password, salt, Argon2Time, Argon2Memory, Argon2Threads, Argon2KeyLen)
-
-	Wipe(password)
+	key := argon2.IDKey(password, salt,
+		argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
 
 	return key, nil
 }
 
 // generateSalt generates a random salt for key derivation
 func generateSalt() ([]byte, error) {
-	salt := make([]byte, 32)
+	salt := make([]byte, saltLength)
 	_, err := rand.Read(salt)
 	return salt, err
 }

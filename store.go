@@ -12,15 +12,15 @@ import (
 
 const (
 	// Algorithm constants
-	AlgorithmAES256GCM = 0
+	algorithmAES256GCM = 0
 
 	// File names
-	KeyDir        = ".secretskeys"
-	PrimSaltFile  = "primarysalt"
-	CurKeyIdxFile = "currentkey"
-	LockFile      = ".keylock"
-	NewPwDir      = ".secretskeys.newpw"
-	OldPwDir      = ".secretskeys.oldpw"
+	keyDirName      = ".secretskeys"
+	primarySaltFile = "primarysalt"
+	curKeyIdxFile   = "currentkey"
+	lockFileName    = ".keylock"
+	newPwDirName    = ".secretskeys.newpw"
+	oldPwDirName    = ".secretskeys.oldpw"
 )
 
 // Store represents a secure storage for sensitive data
@@ -68,10 +68,10 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 
 	store := &Store{
 		dir:           storePath,
-		keyDir:        filepath.Join(storePath, KeyDir),
-		saltFile:      filepath.Join(storePath, KeyDir, PrimSaltFile),
-		curKeyIdxFile: filepath.Join(storePath, KeyDir, CurKeyIdxFile),
-		lockFile:      filepath.Join(storePath, KeyDir, LockFile),
+		keyDir:        filepath.Join(storePath, keyDirName),
+		saltFile:      filepath.Join(storePath, keyDirName, primarySaltFile),
+		curKeyIdxFile: filepath.Join(storePath, keyDirName, curKeyIdxFile),
+		lockFile:      filepath.Join(storePath, keyDirName, lockFileName),
 		stopChan:      make(chan struct{}),
 	}
 
@@ -105,6 +105,9 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 
 // Close closes the store and cleans up resources
 func (s *Store) Close() {
+	if s == nil {
+		return
+	}
 	// Send stop signal to rotateWatch goroutine
 	if s.stopChan != nil {
 		select {
@@ -155,7 +158,7 @@ func (s *Store) Passwd(newpassword []byte) error {
 	// from either the old password or new password.
 
 	// Copy `.secretskeys` to `.secretskeys.newpw`.
-	newdir := filepath.Join(s.dir, NewPwDir)
+	newdir := filepath.Join(s.dir, newPwDirName)
 	cmd := exec.Command("/bin/cp", "-pr", s.keyDir, newdir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -170,7 +173,7 @@ func (s *Store) Passwd(newpassword []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate random salt: %w", err)
 	}
-	err = s.writeFile(filepath.Join(newdir, PrimSaltFile), salt)
+	err = s.writeFile(filepath.Join(newdir, primarySaltFile), salt)
 	if err != nil {
 		return fmt.Errorf("failed to write salt for new primary key: %w", err)
 	}
@@ -180,7 +183,6 @@ func (s *Store) Passwd(newpassword []byte) error {
 		return fmt.Errorf("failed to generate new primary key: %w", err)
 	}
 
-	// 
 	keys, err := filepath.Glob(filepath.Join(newdir, "key*"))
 	if err != nil {
 		return fmt.Errorf("failed to read keys directory: %w", err)
@@ -199,7 +201,7 @@ func (s *Store) Passwd(newpassword []byte) error {
 			return fmt.Errorf("failed to write key %s: %w", keyPath, err)
 		}
 	}
-	oldDir := filepath.Join(s.dir, OldPwDir)
+	oldDir := filepath.Join(s.dir, oldPwDirName)
 	err = os.Rename(s.keyDir, oldDir)
 	if err != nil {
 		return fmt.Errorf("failed to move keys dir to .oldpw: %w", err)
@@ -236,7 +238,7 @@ func (s *Store) checkNewStore() (bool, error) {
 	if os.IsNotExist(err) {
 		// No keys directory
 		// Check if old or new keydir from Passwd() exist.
-		oldDir := filepath.Join(s.dir, OldPwDir)
+		oldDir := filepath.Join(s.dir, oldPwDirName)
 		st, err := os.Stat(oldDir)
 		if err == nil {
 			// Old directory is here, restore it.  Passwd() failed
@@ -345,7 +347,7 @@ func (s *Store) openExistingStore(password []byte) error {
 
 	// In case a Passwd() call was interrupted in the middle, blow away
 	// any existing new password directory.
-	_ = os.RemoveAll(filepath.Join(s.dir, NewPwDir))
+	_ = os.RemoveAll(filepath.Join(s.dir, newPwDirName))
 
 	return nil
 }
@@ -423,7 +425,6 @@ func (s *Store) newKey(index uint8) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	//	fmt.Printf("kdbg: Saving key %s\n", keyPath)
 	err = s.writeFile(keyPath, encKey)
 	if err != nil {
 		return nil, err
@@ -450,7 +451,7 @@ func encryptKey(rawKey []byte, encKey []byte) ([]byte, error) {
 
 	// Create key data structure
 	keyData := &KeyData{
-		Algorithm:    AlgorithmAES256GCM,
+		Algorithm:    algorithmAES256GCM,
 		EncryptedKey: gcm.Seal(nil, nonce, rawKey, nil),
 	}
 
@@ -482,7 +483,7 @@ func (s *Store) loadKeyFromPath(path string) ([]byte, error) {
 	}
 
 	algorithm := data[0]
-	if algorithm != AlgorithmAES256GCM {
+	if algorithm != algorithmAES256GCM {
 		return nil, fmt.Errorf("unsupported algorithm: %d", algorithm)
 	}
 
@@ -553,7 +554,7 @@ func zeroOldKeys(dir string) {
 		if err != nil {
 			continue
 		}
-		if st.Size() > 256 * 1024 {
+		if st.Size() > 256*1024 {
 			// Key files should be MUCH less than 256k, so to make
 			// sure zeroes doesn't get too huge, make this check.
 			continue

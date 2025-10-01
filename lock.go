@@ -1,7 +1,7 @@
 package secrets
 
 import (
-	//	"fmt"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -42,11 +42,7 @@ func (s *Store) writeLock(path string, bits int) (*fileLock, error) {
 			return nil, err
 		}
 	} else if stat.IsDir() {
-		f, err = os.OpenFile(path, os.O_RDWR, s.dirPerm)
-		if err != nil {
-			//			fmt.Printf("kdbg2: failed to open lock file: %v\n", err)
-			return nil, err
-		}
+		return nil, fmt.Errorf("lock 'file' %s is a directory", path)
 	} else {
 		f, err = os.OpenFile(path, os.O_RDWR, s.filePerm)
 		if err != nil {

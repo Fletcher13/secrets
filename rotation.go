@@ -209,7 +209,6 @@ func (s *Store) startRotateWatch() error {
 // keys directory to see if any other process has done a key rotation.
 func (s *Store) rotateWatch(watcher *fsnotify.Watcher) {
 	defer watcher.Close() //nolint: errcheck
-	keyIdxFile := filepath.Join(s.keyDir, CurKeyIdxFile)
 	for {
 		select {
 		case <-s.stopChan:
@@ -219,7 +218,7 @@ func (s *Store) rotateWatch(watcher *fsnotify.Watcher) {
 			if !ok {
 				return
 			}
-			if event.Has(fsnotify.Write) && event.Name == keyIdxFile {
+			if event.Has(fsnotify.Write) && event.Name == s.curKeyIdxFile {
 				//log.Println("kdbg: rotateWatch Updating current key.")
 				lk, err := s.rLock(s.lockFile)
 				if err != nil {

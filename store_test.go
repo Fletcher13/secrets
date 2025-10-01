@@ -8,6 +8,39 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Helper function to create a new store for testing
+func newTestStore(dir string) (*Store, error) {
+	store := &Store{
+		dir:           dir,
+		keyDir:        filepath.Join(dir, keyDirName),
+		saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+		curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
+		primaryKey:    make([]byte, 32),
+	}
+	store.dirPerm = 0700
+	store.filePerm = 0600
+
+	if err := os.MkdirAll(store.keyDir, store.dirPerm); err != nil {
+		return nil, err
+	}
+
+	salt := make([]byte, saltLength)
+	if err := store.writeFile(store.saltFile, salt); err != nil {
+		return nil, err
+	}
+	store.primaryKey = make([]byte, 32)
+
+	_, err := store.newKey(0)
+	if err != nil {
+		return nil, err
+	}
+	store.currentKeyIndex = 0
+	if err := store.saveCurrentKeyIndex(); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
 func TestNewStore(t *testing.T) {
 	assert := assert.New(t)
 
@@ -127,7 +160,7 @@ func TestStore_Passwd(t *testing.T) {
 
 	store, err := NewStore(dir, testPassword)
 	assert.NoError(err)
-	newPwDirPath := filepath.Join(dir, NewPwDir)
+	newPwDirPath := filepath.Join(dir, newPwDirName)
 
 	// Test case 1: Successful passwd
 	t.Run("Passwd Success", func(t *testing.T) {
@@ -170,36 +203,6 @@ func checkDirExists(dir string) bool {
 	return false
 }
 
-// Helper function to create a new store for testing
-func createTestStore(dir string, password []byte) (*Store, error) {
-	store := &Store{
-		dir:           dir,
-		keyDir:        filepath.Join(dir, KeyDir),
-		saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-		curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
-		primaryKey:    make([]byte, 32),
-	}
-	store.dirPerm = 0700
-	store.filePerm = 0600
-
-	if err := os.MkdirAll(store.keyDir, store.dirPerm); err != nil {
-		return nil, err
-	}
-
-	if err := store.createPrimaryKey(password); err != nil {
-		return nil, err
-	}
-	_, err := store.newKey(0)
-	if err != nil {
-		return nil, err
-	}
-	store.currentKeyIndex = 0
-	if err := store.saveCurrentKeyIndex(); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
-
 func TestStore_checkNewStore(t *testing.T) {
 	assert := assert.New(t)
 
@@ -219,14 +222,14 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_existing")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		_, err := createTestStore(dir, testPassword)
+		_, err := newTestStore(dir)
 		assert.NoError(err)
 
 		store := &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.NoError(err)
@@ -260,7 +263,7 @@ func TestStore_checkNewStore(t *testing.T) {
 
 		store := &Store{
 			dir:    dir,
-			keyDir: filepath.Join(dir, KeyDir),
+			keyDir: filepath.Join(dir, keyDirName),
 		}
 		_, err = store.checkNewStore()
 		assert.Error(err)
@@ -272,7 +275,7 @@ func TestStore_checkNewStore(t *testing.T) {
 		assert.NoError(os.MkdirAll(dir, 0700))
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		keysDirPath := filepath.Join(dir, KeyDir)
+		keysDirPath := filepath.Join(dir, keyDirName)
 		err := os.WriteFile(keysDirPath, []byte("invalid"), 0600)
 		assert.NoError(err)
 
@@ -291,20 +294,20 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_missing_salt")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		store, err := createTestStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		store.Close()
 
 		// Remove the salt file
-		err = os.Remove(filepath.Join(dir, KeyDir, PrimSaltFile))
+		err = os.Remove(filepath.Join(dir, keyDirName, primarySaltFile))
 		assert.NoError(err)
 
 		// Re-initialize store object for checkNewStore
 		store = &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.Error(err)
@@ -317,20 +320,20 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_invalid_idx")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		store, err := createTestStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		store.Close()
 
 		// Corrupt the current key index file
-		err = os.WriteFile(filepath.Join(dir, KeyDir, CurKeyIdxFile), []byte("invalid"), 0600)
+		err = os.WriteFile(filepath.Join(dir, keyDirName, curKeyIdxFile), []byte("invalid"), 0600)
 		assert.NoError(err)
 
 		// Re-initialize store object for checkNewStore
 		store = &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.Error(err)
@@ -343,20 +346,20 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_missing_key")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		store, err := createTestStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		store.Close()
 
 		// Remove the current key file (key0)
-		err = os.Remove(filepath.Join(dir, KeyDir, "key0"))
+		err = os.Remove(filepath.Join(dir, keyDirName, "key0"))
 		assert.NoError(err)
 
 		// Re-initialize store object for checkNewStore
 		store = &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.Error(err)

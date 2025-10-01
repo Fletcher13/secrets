@@ -49,7 +49,7 @@ lint:
 # Run benchmark
 bench:
 	@echo "Running benchmark tests..."
-	go test -bench=. ./...
+	go test -bench=. -run=^$
 
 # Build everything
 all: build lint test

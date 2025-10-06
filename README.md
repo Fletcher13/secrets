@@ -14,7 +14,8 @@ corruption from multiple process access.
 - Persistent storage of secrets on disk.
 - Thread-safe and process-safe access to secrets.
 - Support for key rotation to enhance security.
-- Ability to create password-protected tarballs of secret stores for portability.
+- Ability to create password-protected tarballs of secret stores for
+  portability.
 
 ## Installation
 
@@ -33,15 +34,18 @@ This package requires Go 1.24 or later.
 To create a new `secrets.Store` or open an existing one, use
 `secrets.NewStore(dirpath string, password []byte)`.
 
-- If `dirpath` is an empty directory, a new store will be initialized there.
-- If `dirpath` contains an existing `.secretskeys` file, the store will be
-	opened for use.
-- An error will be returned if `dirpath` is not empty and does not contain
-	a secrets store.
+- If `dirpath` is an empty directory, a new store will be initialized
+  there.
+- If `dirpath` contains an existing store, the store will be opened for
+  use.
+- An error will be returned if `dirpath` is not empty and does not
+  contain a secrets store.
 
 The `password` parameter is crucial for decrypting the store's internal
-keys. This password should *not* be saved with the secrets store, as that
-would defeat the purpose of encrypting the data.  The password is then hashed with Argon2id to generate the key used to encrypt/decrypt the key(s) used to encrypt/decrypt the sensitive data.
+keys. This password should *not* be saved with the secrets store, as
+that would defeat the purpose of encrypting the data.  The password is
+then hashed with Argon2id to generate the key used to encrypt/decrypt
+the key(s) used to encrypt/decrypt the sensitive data.
 
 TODO: If `password` is nil or zero length, and a new store will be
 created, a random key will be created and it will attempt to use TPM2.0
@@ -50,6 +54,19 @@ called `sealedkey` in the `.secretskeys` directory.  If `password` is
 nil and this opens an existing store, it will look for the `sealedkey`
 file and attempt to unseal it with TPM2.0.  If that does not work, an
 error will be returned.
+
+### Key Rotation
+
+The `store.Rotate()` method allows you to generate a new encryption key
+for the store and re-encrypt all existing data with the new key. This is
+a crucial security feature for regularly updating your encryption keys.
+
+### Updating Password
+
+The `store.Passwd()` method allows the user to change the password for a
+store.  This function is guaranteed to succeed or fail without leaving
+the store in an unaccessible state, even if the program panics or system
+halts in the middle of the `Passwd()` call.
 
 ### Zeroization
 
@@ -60,6 +77,8 @@ cannot be zeroed in Go.
 Use the `secrets.Wipe()` function to zero out sensitive data when that
 data is no longer needed.  This is required for FIPS-140 and Common
 Criteria compliance.
+
+### Example
 
 ```go
 package main
@@ -90,6 +109,7 @@ func main() {
 		fmt.Printf("Error creating/opening store: %v\n", err)
 		return
 	}
+	secrets.Wipe(password)
 
 	// Save sensitive data
 	secretPath := "my/api/key"
@@ -111,12 +131,6 @@ func main() {
 }
 ```
 
-### Key Rotation
-
-The `store.Rotate()` method allows you to generate a new encryption key
-for the store and re-encrypt all existing data with the new key. This is
-a crucial security feature for regularly updating your encryption keys.
-
 ## Implementation Details
 
 Every `secrets.Store` directory contains a `.secretskeys`
@@ -133,13 +147,17 @@ In the `.secretskeys` directory, you will find:
   algorithm used (currently, only algorithm 0, AES256GCM, is defined),
   followed by the key itself, encrypted with the key passed in to
   `secrets.NewStore()`.
-- TODO: Investigate what algorithm(s) to use to encrypt the keys.
+- `primarysalt`: A binary file containing the salt used for hashing the
+  store's password with Argon2id.
+- `.keylock`: An empty file used with flock(2) to prevent multiple
+  threads or processes from accessing the keys directory simultaneously.
 
 ### Data Storage
 
-All other files in the `secrets.Store` directory are encrypted user data. When `store.Save(path, data)` is called:
-- The `path` is cleaned using `filepath.Clean()` and validated to ensure
-  it remains within the store's hierarchy.
+All other files in the `secrets.Store` directory are encrypted user
+data. When `store.Save(path, data)` is called:
+- The `path` is cleaned and validated to ensure it remains within the
+  store's hierarchy.
 - The `data` is encrypted.
 - The first byte of the saved data file indicates the key number used
   for encryption, followed by the encrypted data.

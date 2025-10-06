@@ -1,7 +1,6 @@
 package secrets
 
 import (
-	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +16,7 @@ func TestStore_SaveLoadDelete(t *testing.T) {
 	dir := filepath.Join(testStoreDir, "data_test_store")
 	defer os.RemoveAll(dir) //nolint: errcheck
 
-	store, err := NewStore(dir, testPassword)
+	store, err := newTestStore(dir)
 	assert.NoError(err)
 	assert.NotNil(store)
 	defer store.Close()
@@ -137,116 +136,6 @@ func TestStore_SaveLoadDelete(t *testing.T) {
 	})
 }
 
-func TestDeriveKeyFromPassword(t *testing.T) {
-	assert := assert.New(t)
-
-	salt := []byte("16_byte_salt_foo")
-	shortSalt := []byte("short_salt")
-
-	// Test case 1: Successful key derivation with valid salt
-	t.Run("Successful key derivation", func(t *testing.T) {
-		key, err := deriveKeyFromPassword(testPassword, salt)
-		assert.NoError(err)
-		assert.NotNil(key)
-		assert.Len(key, int(argon2KeyLen))
-
-		// Ensure deterministic output for same input
-		key2, err := deriveKeyFromPassword(testPassword, salt)
-		assert.NoError(err)
-		assert.Equal(key, key2)
-	})
-
-	// Test case 2: Short salt (should return error)
-	t.Run("Short salt", func(t *testing.T) {
-		key, err := deriveKeyFromPassword(testPassword, shortSalt)
-		assert.Error(err)
-		assert.Nil(key)
-		assert.Contains(err.Error(), "salt must be at least 16 bytes")
-	})
-
-	// Test case 3: Empty password (Argon2id handles this, but we should ensure no crash)
-	t.Run("Empty password", func(t *testing.T) {
-		emptyPassword := []byte("")
-		key, err := deriveKeyFromPassword(emptyPassword, salt)
-		assert.NoError(err)
-		assert.NotNil(key)
-		assert.Len(key, int(argon2KeyLen))
-	})
-
-	// Test case 4: Nil password
-	t.Run("Nil password", func(t *testing.T) {
-		key, err := deriveKeyFromPassword(nil, salt)
-		assert.NoError(err)
-		assert.NotNil(key)
-		assert.Len(key, int(argon2KeyLen))
-	})
-}
-
-func TestGenerateSalt(t *testing.T) {
-	assert := assert.New(t)
-
-	// Test case 1: Successful salt generation
-	t.Run("Successful salt generation", func(t *testing.T) {
-		salt1, err := generateSalt()
-		assert.NoError(err)
-		assert.NotNil(salt1)
-		assert.Len(salt1, 16)
-
-		// Ensure salts are random (highly unlikely to be equal)
-		salt2, err := generateSalt()
-		assert.NoError(err)
-		assert.NotNil(salt2)
-		assert.Len(salt2, 16)
-		assert.NotEqual(salt1, salt2)
-	})
-}
-
-func TestNewStoreOne(t *testing.T) {
-	assert := assert.New(t)
-	// Setup: Create a new store
-	dir := filepath.Join(testStoreDir, "data_one")
-	_ = os.RemoveAll(dir)
-	//defer os.RemoveAll(dir) //nolint: errcheck
-
-	store, err := NewStore(dir, testPassword)
-	assert.NoError(err)
-	assert.NotNil(store)
-	defer store.Close()
-
-	i := 0
-	path := fmt.Sprintf("file%d", i)
-	secret := []byte(fmt.Sprintf("secret%d", i))
-	assert.NoError(store.Save(path, secret))
-
-	store2, err := NewStore(dir, testPassword)
-	assert.NoError(err)
-	assert.NotNil(store2)
-	defer store2.Close()
-
-	loadedSecret, err := store2.Load(path)
-	assert.NoError(err)
-	assert.Equal(string(secret), string(loadedSecret))
-
-}
-
-func TestOpenStoreTwo(t *testing.T) {
-	assert := assert.New(t)
-	// Setup: Open an existing store
-	dir := filepath.Join(testStoreDir, "data_one")
-	//defer os.RemoveAll(dir) //nolint: errcheck
-
-	store, err := NewStore(dir, testPassword)
-	assert.NoError(err)
-	defer store.Close()
-
-	i := 0
-	path := fmt.Sprintf("file%d", i)
-	expSecret := []byte(fmt.Sprintf("secret%d", i))
-	secret, err := store.Load(path)
-	assert.NoError(err)
-	assert.Equal(string(secret), string(expSecret))
-}
-
 func BenchmarkEncrypt(b *testing.B) {
 	store := &Store{
 		currentKeyIndex: 0,
@@ -287,13 +176,47 @@ func BenchmarkDecrypt(b *testing.B) {
 	}
 }
 
+func BenchmarkSaveCached(b *testing.B) {
+	// Setup: Create a new store
+	dir := filepath.Join(testStoreDir, "data_bench")
+	_ = os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint: errcheck
+
+	store, err := newTestStore(dir)
+	if err != nil {
+		fmt.Printf("Failed to open store %s: %v\n", dir, err)
+		return
+	}
+	defer store.Close()
+
+	path := "cached_file"
+	secret := []byte("secret")
+
+	// Save it once to cache the disk block
+	err = store.Save(path, secret)
+	if err != nil {
+		fmt.Printf("Failed to save secret %s: %v", path, err)
+		return
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		err := store.Save(path, secret)
+		if err != nil {
+			fmt.Printf("Failed to save secret %s: %v", path, err)
+			return
+		}
+	}
+}
+
 func BenchmarkSave(b *testing.B) {
 	// Setup: Create a new store
 	dir := filepath.Join(testStoreDir, "data_bench")
 	_ = os.RemoveAll(dir)
-	//defer os.RemoveAll(dir) //nolint: errcheck
+	// Do not delete this at the end of the test so BenchmarkLoad can
+	// use the saved secrets from this benchmark.
 
-	store, err := NewStore(dir, testPassword)
+	store, err := newTestStore(dir)
 	if err != nil {
 		fmt.Printf("Failed to open store %s: %v\n", dir, err)
 		return
@@ -320,7 +243,7 @@ func BenchmarkLoad(b *testing.B) {
 	dir := filepath.Join(testStoreDir, "data_bench")
 	defer os.RemoveAll(dir) //nolint: errcheck
 
-	store, err := NewStore(dir, testPassword)
+	store, err := newTestStore(dir)
 	if err != nil {
 		fmt.Printf("Failed to open store %s: %v\n", dir, err)
 		return
@@ -347,31 +270,3 @@ func BenchmarkLoad(b *testing.B) {
 	}
 	fmt.Println("Load loops:", loops)
 }
-
-func BenchmarkArgon2id(b *testing.B) {
-	salt := make([]byte, 16)
-	password := make([]byte, 16)
-
-	b.ResetTimer() // Do not time the initial derivation
-	for b.Loop() {
-		_, _ = rand.Read(salt)
-		_, _ = rand.Read(password)
-		_, _ = deriveKeyFromPassword(testPassword, salt)
-	}
-}
-
-/*
-func BenchmarkArgon2id2Gig(b *testing.B) {
-	salt := make([]byte, 16)
-	password := make([]byte, 16)
-	argon2Time = 1
-	argon2Memory = 2 * 1024 * 1024
-
-	b.ResetTimer()	// Do not time the initial derivation
-	for b.Loop() {
-		_, _ = rand.Read(salt)
-		_, _ = rand.Read(password)
-		_, _ = deriveKeyFromPassword(testPassword, salt)
-	}
-}
-*/

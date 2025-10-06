@@ -8,18 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"golang.org/x/crypto/argon2"
-)
-
-const (
-	// Argon2id key derivation constants
-	// These parameters provide strong security while being reasonably fast
-	argon2Time    = uint32(3)         // Number of iterations
-	argon2Memory  = uint32(48 * 1024) // 48 MB memory usage
-	argon2Threads = uint8(4)          // Number of threads
-	argon2KeyLen  = uint32(32)        // Output key length
-	saltLength    = 16                // Number of bytes for salt == 128 bits
 )
 
 // Save stores sensitive data at the given path
@@ -209,26 +197,4 @@ func (s *Store) getKeyIndex(file string) (uint8, error) {
 		return 0, fmt.Errorf("corrupt file %s: %w", file, err)
 	}
 	return encryptedData[0], nil
-}
-
-// deriveKeyFromPassword derives a key from a password using Argon2id
-// Argon2id is the recommended password hashing function by OWASP and provides
-// strong resistance against both side-channel and timing attacks.
-func deriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
-	if len(salt) < saltLength {
-		return nil, fmt.Errorf("salt must be at least %d bytes", saltLength)
-	}
-
-	// Use Argon2id for key derivation
-	key := argon2.IDKey(password, salt,
-		argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
-
-	return key, nil
-}
-
-// generateSalt generates a random salt for key derivation
-func generateSalt() ([]byte, error) {
-	salt := make([]byte, saltLength)
-	_, err := rand.Read(salt)
-	return salt, err
 }

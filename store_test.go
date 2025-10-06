@@ -1,45 +1,13 @@
 package secrets
 
 import (
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-// Helper function to create a new store for testing
-func newTestStore(dir string) (*Store, error) {
-	store := &Store{
-		dir:           dir,
-		keyDir:        filepath.Join(dir, keyDirName),
-		saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
-		curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
-		primaryKey:    make([]byte, 32),
-	}
-	store.dirPerm = 0700
-	store.filePerm = 0600
-
-	if err := os.MkdirAll(store.keyDir, store.dirPerm); err != nil {
-		return nil, err
-	}
-
-	salt := make([]byte, saltLength)
-	if err := store.writeFile(store.saltFile, salt); err != nil {
-		return nil, err
-	}
-	store.primaryKey = make([]byte, 32)
-
-	_, err := store.newKey(0)
-	if err != nil {
-		return nil, err
-	}
-	store.currentKeyIndex = 0
-	if err := store.saveCurrentKeyIndex(); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
 
 func TestNewStore(t *testing.T) {
 	assert := assert.New(t)
@@ -127,7 +95,7 @@ func TestStore_Close(t *testing.T) {
 	dir := filepath.Join(testStoreDir, "close_test")
 	defer os.RemoveAll(dir) //nolint: errcheck
 
-	store, err := NewStore(dir, testPassword)
+	store, err := newTestStore(dir)
 	assert.NoError(err)
 	assert.NotNil(store)
 
@@ -158,7 +126,7 @@ func TestStore_Passwd(t *testing.T) {
 	dir := filepath.Join(testStoreDir, "passwd")
 	defer os.RemoveAll(dir) //nolint: errcheck
 
-	store, err := NewStore(dir, testPassword)
+	store, err := newTestStore(dir)
 	assert.NoError(err)
 	newPwDirPath := filepath.Join(dir, newPwDirName)
 
@@ -373,7 +341,7 @@ func TestStore_checkForOldKeys(t *testing.T) {
 
 	// Helper to create a store with multiple key files (simulating a crash during rotation)
 	createCorruptedStore := func(dir string, password []byte) (*Store, error) {
-		store, err := NewStore(dir, password)
+		store, err := newTestStore(dir)
 		if err != nil {
 			return nil, err
 		}
@@ -411,7 +379,7 @@ func TestStore_checkForOldKeys(t *testing.T) {
 		assert.NotNil(corruptedStore)
 
 		// Open the store again, which will call checkForOldKeys
-		store, err := NewStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		assert.NotNil(store)
 		// The recovery process runs in a goroutine, so we can't directly assert its immediate effect.
@@ -419,3 +387,95 @@ func TestStore_checkForOldKeys(t *testing.T) {
 		store.Close()
 	})
 }
+
+func TestDeriveKeyFromPassword(t *testing.T) {
+	assert := assert.New(t)
+
+	salt := []byte("16_byte_salt_foo")
+	shortSalt := []byte("short_salt")
+
+	// Test case 1: Successful key derivation with valid salt
+	t.Run("Successful key derivation", func(t *testing.T) {
+		key, err := deriveKeyFromPassword(testPassword, salt)
+		assert.NoError(err)
+		assert.NotNil(key)
+		assert.Len(key, int(argon2KeyLen))
+
+		// Ensure deterministic output for same input
+		key2, err := deriveKeyFromPassword(testPassword, salt)
+		assert.NoError(err)
+		assert.Equal(key, key2)
+	})
+
+	// Test case 2: Short salt (should return error)
+	t.Run("Short salt", func(t *testing.T) {
+		key, err := deriveKeyFromPassword(testPassword, shortSalt)
+		assert.Error(err)
+		assert.Nil(key)
+		assert.Contains(err.Error(), "salt must be at least 16 bytes")
+	})
+
+	// Test case 3: Empty password (Argon2id handles this, but we should ensure no crash)
+	t.Run("Empty password", func(t *testing.T) {
+		emptyPassword := []byte("")
+		key, err := deriveKeyFromPassword(emptyPassword, salt)
+		assert.NoError(err)
+		assert.NotNil(key)
+		assert.Len(key, int(argon2KeyLen))
+	})
+
+	// Test case 4: Nil password
+	t.Run("Nil password", func(t *testing.T) {
+		key, err := deriveKeyFromPassword(nil, salt)
+		assert.NoError(err)
+		assert.NotNil(key)
+		assert.Len(key, int(argon2KeyLen))
+	})
+}
+
+func TestGenerateSalt(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test case 1: Successful salt generation
+	t.Run("Successful salt generation", func(t *testing.T) {
+		salt1, err := generateSalt()
+		assert.NoError(err)
+		assert.NotNil(salt1)
+		assert.Len(salt1, 16)
+
+		// Ensure salts are random (highly unlikely to be equal)
+		salt2, err := generateSalt()
+		assert.NoError(err)
+		assert.NotNil(salt2)
+		assert.Len(salt2, 16)
+		assert.NotEqual(salt1, salt2)
+	})
+}
+
+func BenchmarkArgon2id(b *testing.B) {
+	salt := make([]byte, 16)
+	password := make([]byte, 16)
+
+	b.ResetTimer() // Do not time the initial derivation
+	for b.Loop() {
+		_, _ = rand.Read(salt)
+		_, _ = rand.Read(password)
+		_, _ = deriveKeyFromPassword(testPassword, salt)
+	}
+}
+
+/*
+func BenchmarkArgon2id2Gig(b *testing.B) {
+	salt := make([]byte, 16)
+	password := make([]byte, 16)
+	argon2Time = 1
+	argon2Memory = 2 * 1024 * 1024
+
+	b.ResetTimer()	// Do not time the initial derivation
+	for b.Loop() {
+		_, _ = rand.Read(salt)
+		_, _ = rand.Read(password)
+		_, _ = deriveKeyFromPassword(testPassword, salt)
+	}
+}
+*/

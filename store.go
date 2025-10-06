@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"golang.org/x/crypto/argon2"
 )
 
 const (
@@ -21,6 +23,14 @@ const (
 	lockFileName    = ".keylock"
 	newPwDirName    = ".secretskeys.newpw"
 	oldPwDirName    = ".secretskeys.oldpw"
+
+	// Argon2id key derivation constants
+	// These parameters provide strong security while being reasonably fast
+	argon2Time    = uint32(3)         // Number of iterations
+	argon2Memory  = uint32(48 * 1024) // 48 MB memory usage
+	argon2Threads = uint8(4)          // Number of threads
+	argon2KeyLen  = uint32(32)        // Output key length
+	saltLength    = 16                // Number of bytes for salt == 128 bits
 )
 
 // Store represents a secure storage for sensitive data
@@ -168,7 +178,7 @@ func (s *Store) Passwd(newpassword []byte) error {
 	defer passwdCleanup(newdir) // Deletes .newpw directory if failure happens.
 	// On success, the .newpw directory won't exist any more, so this is safe.
 
-	// Generate salt, then get new primaryKey with Argon2
+	// Generate salt, then get new primaryKey with Argon2id
 	salt, err := generateSalt()
 	if err != nil {
 		return fmt.Errorf("failed to generate random salt: %w", err)
@@ -225,45 +235,37 @@ func (s *Store) Passwd(newpassword []byte) error {
 // Check if this is an existing store or not.
 func (s *Store) checkNewStore() (bool, error) {
 	stat, err := os.Stat(s.dir)
-	if err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("error accessing %s: %w", s.dir, err)
-	} else if os.IsNotExist(err) {
+	if os.IsNotExist(err) {
 		return true, nil
+	} else if err != nil {
+		return false, fmt.Errorf("error accessing %s: %w", s.dir, err)
 	} else if !stat.IsDir() {
 		return false, fmt.Errorf("%s is not a directory: %w", s.dir, err)
 	}
 
 	// Directory exists, check if it's a valid store
-	stat, err = os.Stat(s.keyDir)
+	_, err = os.Stat(s.keyDir)
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("error accessing %s: %w", s.keyDir, err)
+	}
 	if os.IsNotExist(err) {
 		// No keys directory
-		// Check if old or new keydir from Passwd() exist.
+		// Check if old keydir from Passwd() exists.
 		oldDir := filepath.Join(s.dir, oldPwDirName)
-		st, err := os.Stat(oldDir)
-		if err == nil {
-			// Old directory is here, restore it.  Passwd() failed
-			// between moving the keydir to .oldpw and moving .newpw to the
-			// keydir.
-			if !st.IsDir() {
-				return false, fmt.Errorf("old key dir is not a directory: %w", err)
+		_, err = os.Stat(oldDir)
+		if err != nil {
+			// No keydir or oldPw keydir.  Check if dir is empty.
+			dirFiles, err := os.ReadDir(s.dir)
+			if err != nil || len(dirFiles) != 0 {
+				return false, fmt.Errorf("%s is not empty", s.dir)
 			}
-			err = os.Rename(oldDir, s.keyDir)
-			if err != nil {
-				return false, fmt.Errorf("could not restore keys directory: %w", err)
-			}
-			// Restored the old directory.  This is an existing store.
-			return false, nil
+			return true, nil
 		}
-		//Check if dir is empty.
-		dirFiles, err := os.ReadDir(s.dir)
-		if err != nil || len(dirFiles) != 0 {
-			return false, fmt.Errorf("%s is not empty", s.dir)
+		// There is an oldpw keydir.  Check and move it if possible.
+		_, err = s.checkForOldKeysDir(oldDir)
+		if err != nil {
+			return false, err
 		}
-		return true, nil
-	} else if err != nil {
-		return false, fmt.Errorf("error accessing %s: %w", s.keyDir, err)
-	} else if !stat.IsDir() {
-		return false, fmt.Errorf("%s is not a directory", s.dir)
 	}
 
 	// Check that primary key salt, currentkey, and keyN are all there.
@@ -282,6 +284,43 @@ func (s *Store) checkNewStore() (bool, error) {
 	}
 
 	return false, nil
+}
+
+func (s *Store) checkForOldKeysDir(oldDir string) (os.FileInfo, error) {
+	// Old directory is here, restore it.  Passwd() failed between
+	// moving the keydir to .oldpw and moving .newpw to the keydir.
+
+	// First make sure no one else is restoring or restored the
+	// directory.
+	lockfile := filepath.Join(oldDir, lockFileName)
+	lk, err := s.lock(lockfile)
+	if err != nil {
+		// Directory could have been moved before the lock could be
+		// acquired.
+		stat, err := os.Stat(s.keyDir)
+		if err != nil {
+			return nil, fmt.Errorf("error checking keys directory: %w", err)
+		}
+		return stat, nil
+	}
+	defer lk.unlock()
+	stat, err := os.Stat(s.keyDir)
+	if err != nil {
+		// Nothing else moved this to the normal keys directory while
+		// waiting for the lock. Now make sure the oldDir still exists.
+		stat, err = os.Stat(oldDir)
+		if err != nil {
+			// Something went terribly wrong.
+			return nil, fmt.Errorf("keys directory corrupted: %w", err)
+		}
+		err = os.Rename(oldDir, s.keyDir)
+		if err != nil {
+			// Again, something went terribly wrong.
+			return nil, fmt.Errorf("could not restore keys directory: %w", err)
+		}
+	}
+	// The old directory has been restored.
+	return stat, nil
 }
 
 func (s *Store) createNewStore(password []byte) error {
@@ -562,4 +601,26 @@ func zeroOldKeys(dir string) {
 		zeroes := make([]byte, st.Size())
 		_, _ = f.WriteAt(zeroes, 0)
 	}
+}
+
+// deriveKeyFromPassword derives a key from a password using Argon2id
+// Argon2id is the recommended password hashing function by OWASP and provides
+// strong resistance against both side-channel and timing attacks.
+func deriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
+	if len(salt) < saltLength {
+		return nil, fmt.Errorf("salt must be at least %d bytes", saltLength)
+	}
+
+	// Use Argon2id for key derivation
+	key := argon2.IDKey(password, salt,
+		argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
+
+	return key, nil
+}
+
+// generateSalt generates a random salt for key derivation
+func generateSalt() ([]byte, error) {
+	salt := make([]byte, saltLength)
+	_, err := rand.Read(salt)
+	return salt, err
 }

@@ -74,8 +74,6 @@ func TestStore_Rotate(t *testing.T) {
 		// Save some data to be re-encrypted (after setting currentKeyIndex)
 		secretPath3 := "rollover/secret"
 		data3 := []byte("rollover data")
-		fmt.Printf("kdbg: Saving secret %s with key %d\n", secretPath3,
-			store.currentKeyIndex)
 		assert.NoError(store.Save(secretPath3, data3))
 
 		data4, err := store.Load(secretPath3)

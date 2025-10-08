@@ -276,7 +276,6 @@ func BenchmarkLockExisting(b *testing.B) {
 	path := filepath.Join(dir, "testfile")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
 	if err != nil {
-		fmt.Printf("kdbg1: failed to create lock file: %v\n", err)
 		return
 	}
 	_ = f.Close()
@@ -312,7 +311,6 @@ func BenchmarkLockNBExisting(b *testing.B) {
 	path := filepath.Join(dir, "testfile")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
 	if err != nil {
-		fmt.Printf("kdbg1: failed to create lock file: %v\n", err)
 		return
 	}
 	_ = f.Close()

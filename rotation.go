@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"fmt"
-	//"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,7 +58,6 @@ func (s *Store) updateFiles(calls int) {
 		return
 	}
 	for _, file := range files {
-		//log.Printf("kdbg: Re-encrypting %s\n", file)
 		s.reencryptFile(file)
 	}
 
@@ -68,26 +66,22 @@ func (s *Store) updateFiles(calls int) {
 	// Get list of all files again, just to make sure there weren't new ones.
 	files, err = s.listDataFiles()
 	if err != nil {
-		//log.Printf("kdbg: ListDataFiles failed.\n")
 		return
 	}
 	for _, file := range files {
 		i, err := s.getKeyIndex(file)
 		if err != nil || i != newKeyIndex {
-			//log.Printf("kdbg: Re-updating because %s has wrong key index.\n", file)
 			s.updateFiles(calls + 1) // Didn't get them all, redo the update.
 			return
 		}
 	}
 	lk, err := s.lock(s.lockFile)
 	if err != nil {
-		//log.Printf("kdbg: Failed to grab store lock file.\n")
 		return
 	}
 	// Don't defer the unlock until after knowing if recursive call will be made
 	if s.currentKeyIndex != newKeyIndex {
 		// A rotation happened while checking, can't delete old keys.  Redo.
-		//log.Printf("kdbg: Rotation happened, re-encrypting files\n")
 		lk.unlock()
 		s.updateFiles(calls + 1)
 		return
@@ -96,12 +90,10 @@ func (s *Store) updateFiles(calls int) {
 	curKeyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", newKeyIndex))
 	allKeys, err := filepath.Glob(filepath.Join(s.keyDir, "key*"))
 	if err != nil {
-		//log.Printf("kdbg: Glob failed.\n")
 		return
 	}
 	for _, keyFile := range allKeys {
 		if keyFile != curKeyPath {
-			//log.Printf("kdbg: Removing key %s\n", keyFile)
 			_ = os.Remove(keyFile)
 		}
 	}
@@ -135,7 +127,6 @@ func (s *Store) listDataFiles() ([]string, error) {
 func (s *Store) reencryptFile(path string) {
 	lk, err := s.lock(path)
 	if err != nil {
-		//log.Printf("kdbg: Failed to lock %s\n", path)
 		return
 	}
 	defer lk.unlock()
@@ -143,14 +134,12 @@ func (s *Store) reencryptFile(path string) {
 	// Read and decrypt with old key
 	encryptedData, err := os.ReadFile(path)
 	if err != nil {
-		//log.Printf("kdbg: Failed to read %s\n", path)
 		// Failed to read file.  Delete it.
 		_ = os.Remove(path)
 		return
 	}
 
 	if len(encryptedData) < 1 {
-		//log.Printf("kdbg: %s is empty\n", path)
 		// Invalid file format, so no useful data.  Delete this file.
 		_ = os.Remove(path)
 		return
@@ -159,16 +148,12 @@ func (s *Store) reencryptFile(path string) {
 	oldKeyIndex := encryptedData[0]
 
 	if oldKeyIndex == s.currentKeyIndex {
-		//		log.Printf("kdbg: %s encrypted with current key %d\n", path, oldKeyIndex)
 		// Already updated, no need to re-encrypt.
 		return
 	}
-	//	log.Printf("kdbg: Re-encrypting %s from key %d to key %d\n", path,
-	//		oldKeyIndex, s.currentKeyIndex)
 
 	data, err := s.decryptData(encryptedData)
 	if err != nil {
-		//log.Printf("kdbg: Failed to decrypt %s\n", path)
 		// Failed to decrypt, so this data is useless.  Delete this file.
 		_ = os.Remove(path)
 		return
@@ -177,7 +162,6 @@ func (s *Store) reencryptFile(path string) {
 	// Encrypt with new key
 	newEncryptedData, err := s.encryptData(data)
 	if err != nil {
-		//log.Printf("kdbg: Failed to encrypt %s\n", path)
 		// failed to encrypt with new key, just return leaving file
 		// encrypted by old key
 		return
@@ -185,9 +169,6 @@ func (s *Store) reencryptFile(path string) {
 
 	// Write back to file
 	_ = os.WriteFile(path, newEncryptedData, s.filePerm)
-	//	if err != nil {
-	//		log.Printf("kdbg: Failed to write newly-encrypted %s\n", path)
-	//	}
 }
 
 // startRotateWatch initializes an fsnotify watch on the keys directory
@@ -219,17 +200,13 @@ func (s *Store) rotateWatch(watcher *fsnotify.Watcher) {
 				return
 			}
 			if event.Has(fsnotify.Write) && event.Name == s.curKeyIdxFile {
-				//log.Println("kdbg: rotateWatch Updating current key.")
 				lk, err := s.rLock(s.lockFile)
 				if err != nil {
-					//log.Printf("kdbg: rotateWatch error grabbing lock: %v", err)
 					return
 				}
 				err = s.loadCurrentKey()
 				lk.unlock()
 				if err != nil {
-					//log.Printf("kdbg: rotateWatch error loading new key: %v\n",
-					//	err)
 					return
 				}
 			}
@@ -238,7 +215,6 @@ func (s *Store) rotateWatch(watcher *fsnotify.Watcher) {
 				return
 			}
 			if err != nil {
-				//log.Println("kdbg: Watcher got error:", err)
 				return
 			}
 		}

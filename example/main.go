@@ -28,13 +28,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating/opening store: %v", err)
 	}
-	defer func() {
-		store.Close()
-		err = os.RemoveAll(dir) // Clean up the directory when done
-		if err != nil {
-			log.Fatalf("Error ensuring store directory does not exist: %v", err)
-		}
-	}()
+	defer store.Close()
 
 	fmt.Println("=== Secrets Store Example ===")
 
@@ -42,6 +36,7 @@ func main() {
 	secretPath := "my/api/key"
 	sensitiveData := []byte("my_super_secret_api_key_123")
 	err = store.Save(secretPath, sensitiveData)
+	secrets.Wipe(sensitiveData)
 	if err != nil {
 		log.Fatalf("Error saving secret: %v", err)
 	}
@@ -51,6 +46,7 @@ func main() {
 	anotherSecret := "database/password"
 	passwordData := []byte("secure_password_456")
 	err = store.Save(anotherSecret, passwordData)
+	secrets.Wipe(passwordData)
 	if err != nil {
 		log.Fatalf("Error saving secret: %v", err)
 	}
@@ -62,6 +58,7 @@ func main() {
 		log.Fatalf("Error loading secret: %v", err)
 	}
 	fmt.Printf("Loaded secret: %s\n", string(loadedData))
+	secrets.Wipe(loadedData)
 
 	// Demonstrate key rotation
 	fmt.Println("\n=== Key Rotation Example ===")
@@ -78,13 +75,14 @@ func main() {
 		log.Fatalf("Error loading secret after rotation: %v", err)
 	}
 	fmt.Printf("Secret still accessible after rotation: %s\n", string(loadedData))
+	secrets.Wipe(loadedData)
 
 	// Demonstrate secure memory wiping
 	fmt.Println("\n=== Secure Memory Wiping Example ===")
 	sensitiveBytes := []byte("sensitive_data_to_wipe")
-	fmt.Printf("Before wipe: %s\n", string(sensitiveBytes))
+	fmt.Printf("Before wipe: '%s'\n", string(sensitiveBytes))
 	secrets.Wipe(sensitiveBytes)
-	fmt.Printf("After wipe: %s (should be empty or random)\n", string(sensitiveBytes))
+	fmt.Printf("After wipe:  '%s' (should be empty or random)\n", string(sensitiveBytes))
 
 	fmt.Println("\n=== Example completed successfully ===")
 }

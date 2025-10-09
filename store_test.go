@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -94,7 +95,7 @@ func TestStore_Close(t *testing.T) {
 	dir := filepath.Join(testStoreDir, "close_test")
 	defer os.RemoveAll(dir) //nolint: errcheck
 
-	store, err := NewStore(dir, testPassword)
+	store, err := newTestStore(dir)
 	assert.NoError(err)
 	assert.NotNil(store)
 
@@ -119,38 +120,59 @@ func TestStore_Close(t *testing.T) {
 	assert.Equal("", store.curKeyIdxFile)
 }
 
-func TestStore_checkNewStore(t *testing.T) {
+func TestStore_Passwd(t *testing.T) {
 	assert := assert.New(t)
 
-	// Helper function to create a new store for testing
-	createTestStore := func(dir string, password []byte) (*Store, error) {
-		store := &Store{
-			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
-			primaryKey:    make([]byte, 32),
-		}
-		store.dirPerm = 0700
-		store.filePerm = 0600
+	dir := filepath.Join(testStoreDir, "passwd")
+	defer os.RemoveAll(dir) //nolint: errcheck
 
-		if err := os.MkdirAll(store.keyDir, store.dirPerm); err != nil {
-			return nil, err
-		}
+	store, err := newTestStore(dir)
+	assert.NoError(err)
+	newPwDirPath := filepath.Join(dir, newPwDirName)
 
-		if err := store.createPrimaryKey(password); err != nil {
-			return nil, err
-		}
-		_, err := store.newKey(0)
-		if err != nil {
-			return nil, err
-		}
-		store.currentKeyIndex = 0
-		if err := store.saveCurrentKeyIndex(); err != nil {
-			return nil, err
-		}
-		return store, nil
+	// Test case 1: Successful passwd
+	t.Run("Passwd Success", func(t *testing.T) {
+		err := store.Passwd([]byte("new_password"))
+		assert.NoError(err)
+		assert.False(checkDirExists(newPwDirPath))
+	})
+
+	// Test case 2: Empty new password
+	t.Run("Passwd Empty Password", func(t *testing.T) {
+		err := store.Passwd([]byte(""))
+		assert.Error(err)
+		assert.False(checkDirExists(newPwDirPath))
+	})
+
+	// Test case 3: Store locked
+	t.Run("Passwd locked", func(t *testing.T) {
+		lk, err := store.lock(store.lockFile)
+		assert.NoError(err)
+		defer lk.unlock()
+		err = store.Passwd(testPassword)
+		assert.Error(err)
+		assert.Contains(err.Error(), "is being modified")
+		assert.False(checkDirExists(newPwDirPath))
+	})
+
+	// Test case 4: Successful passwd
+	t.Run("Passwd Success", func(t *testing.T) {
+		err := store.Passwd([]byte("new_password"))
+		assert.NoError(err)
+		assert.False(checkDirExists(newPwDirPath))
+	})
+}
+
+func checkDirExists(dir string) bool {
+	st, err := os.Stat(dir)
+	if err == nil && st.IsDir() {
+		return true
 	}
+	return false
+}
+
+func TestStore_checkNewStore(t *testing.T) {
+	assert := assert.New(t)
 
 	// Test case 1: Empty directory (should be a new store)
 	t.Run("Empty directory", func(t *testing.T) {
@@ -168,14 +190,14 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_existing")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		_, err := createTestStore(dir, testPassword)
+		_, err := newTestStore(dir)
 		assert.NoError(err)
 
 		store := &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.NoError(err)
@@ -209,7 +231,7 @@ func TestStore_checkNewStore(t *testing.T) {
 
 		store := &Store{
 			dir:    dir,
-			keyDir: filepath.Join(dir, KeyDir),
+			keyDir: filepath.Join(dir, keyDirName),
 		}
 		_, err = store.checkNewStore()
 		assert.Error(err)
@@ -221,7 +243,7 @@ func TestStore_checkNewStore(t *testing.T) {
 		assert.NoError(os.MkdirAll(dir, 0700))
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		keysDirPath := filepath.Join(dir, KeyDir)
+		keysDirPath := filepath.Join(dir, keyDirName)
 		err := os.WriteFile(keysDirPath, []byte("invalid"), 0600)
 		assert.NoError(err)
 
@@ -240,20 +262,20 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_missing_salt")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		store, err := createTestStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		store.Close()
 
 		// Remove the salt file
-		err = os.Remove(filepath.Join(dir, KeyDir, PrimSaltFile))
+		err = os.Remove(filepath.Join(dir, keyDirName, primarySaltFile))
 		assert.NoError(err)
 
 		// Re-initialize store object for checkNewStore
 		store = &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.Error(err)
@@ -266,20 +288,20 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_invalid_idx")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		store, err := createTestStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		store.Close()
 
 		// Corrupt the current key index file
-		err = os.WriteFile(filepath.Join(dir, KeyDir, CurKeyIdxFile), []byte("invalid"), 0600)
+		err = os.WriteFile(filepath.Join(dir, keyDirName, curKeyIdxFile), []byte("invalid"), 0600)
 		assert.NoError(err)
 
 		// Re-initialize store object for checkNewStore
 		store = &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.Error(err)
@@ -292,20 +314,20 @@ func TestStore_checkNewStore(t *testing.T) {
 		dir := filepath.Join(testStoreDir, "check_new_store_missing_key")
 		defer os.RemoveAll(dir) //nolint: errcheck
 
-		store, err := createTestStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		store.Close()
 
 		// Remove the current key file (key0)
-		err = os.Remove(filepath.Join(dir, KeyDir, "key0"))
+		err = os.Remove(filepath.Join(dir, keyDirName, "key0"))
 		assert.NoError(err)
 
 		// Re-initialize store object for checkNewStore
 		store = &Store{
 			dir:           dir,
-			keyDir:        filepath.Join(dir, KeyDir),
-			saltFile:      filepath.Join(dir, KeyDir, PrimSaltFile),
-			curKeyIdxFile: filepath.Join(dir, KeyDir, CurKeyIdxFile),
+			keyDir:        filepath.Join(dir, keyDirName),
+			saltFile:      filepath.Join(dir, keyDirName, primarySaltFile),
+			curKeyIdxFile: filepath.Join(dir, keyDirName, curKeyIdxFile),
 		}
 		isNew, err := store.checkNewStore()
 		assert.Error(err)
@@ -319,7 +341,7 @@ func TestStore_checkForOldKeys(t *testing.T) {
 
 	// Helper to create a store with multiple key files (simulating a crash during rotation)
 	createCorruptedStore := func(dir string, password []byte) (*Store, error) {
-		store, err := NewStore(dir, password)
+		store, err := newTestStore(dir)
 		if err != nil {
 			return nil, err
 		}
@@ -357,7 +379,7 @@ func TestStore_checkForOldKeys(t *testing.T) {
 		assert.NotNil(corruptedStore)
 
 		// Open the store again, which will call checkForOldKeys
-		store, err := NewStore(dir, testPassword)
+		store, err := newTestStore(dir)
 		assert.NoError(err)
 		assert.NotNil(store)
 		// The recovery process runs in a goroutine, so we can't directly assert its immediate effect.
@@ -365,3 +387,95 @@ func TestStore_checkForOldKeys(t *testing.T) {
 		store.Close()
 	})
 }
+
+func TestDeriveKeyFromPassword(t *testing.T) {
+	assert := assert.New(t)
+
+	salt := []byte("16_byte_salt_foo")
+	shortSalt := []byte("short_salt")
+
+	// Test case 1: Successful key derivation with valid salt
+	t.Run("Successful key derivation", func(t *testing.T) {
+		key, err := deriveKeyFromPassword(testPassword, salt)
+		assert.NoError(err)
+		assert.NotNil(key)
+		assert.Len(key, int(argon2KeyLen))
+
+		// Ensure deterministic output for same input
+		key2, err := deriveKeyFromPassword(testPassword, salt)
+		assert.NoError(err)
+		assert.Equal(key, key2)
+	})
+
+	// Test case 2: Short salt (should return error)
+	t.Run("Short salt", func(t *testing.T) {
+		key, err := deriveKeyFromPassword(testPassword, shortSalt)
+		assert.Error(err)
+		assert.Nil(key)
+		assert.Contains(err.Error(), "salt must be at least 16 bytes")
+	})
+
+	// Test case 3: Empty password (Argon2id handles this, but we should ensure no crash)
+	t.Run("Empty password", func(t *testing.T) {
+		emptyPassword := []byte("")
+		key, err := deriveKeyFromPassword(emptyPassword, salt)
+		assert.NoError(err)
+		assert.NotNil(key)
+		assert.Len(key, int(argon2KeyLen))
+	})
+
+	// Test case 4: Nil password
+	t.Run("Nil password", func(t *testing.T) {
+		key, err := deriveKeyFromPassword(nil, salt)
+		assert.NoError(err)
+		assert.NotNil(key)
+		assert.Len(key, int(argon2KeyLen))
+	})
+}
+
+func TestGenerateSalt(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test case 1: Successful salt generation
+	t.Run("Successful salt generation", func(t *testing.T) {
+		salt1, err := generateSalt()
+		assert.NoError(err)
+		assert.NotNil(salt1)
+		assert.Len(salt1, 16)
+
+		// Ensure salts are random (highly unlikely to be equal)
+		salt2, err := generateSalt()
+		assert.NoError(err)
+		assert.NotNil(salt2)
+		assert.Len(salt2, 16)
+		assert.NotEqual(salt1, salt2)
+	})
+}
+
+func BenchmarkArgon2id(b *testing.B) {
+	salt := make([]byte, 16)
+	password := make([]byte, 16)
+
+	b.ResetTimer() // Do not time the initial derivation
+	for b.Loop() {
+		_, _ = rand.Read(salt)
+		_, _ = rand.Read(password)
+		_, _ = deriveKeyFromPassword(testPassword, salt)
+	}
+}
+
+/*
+func BenchmarkArgon2id2Gig(b *testing.B) {
+	salt := make([]byte, 16)
+	password := make([]byte, 16)
+	argon2Time = 1
+	argon2Memory = 2 * 1024 * 1024
+
+	b.ResetTimer()	// Do not time the initial derivation
+	for b.Loop() {
+		_, _ = rand.Read(salt)
+		_, _ = rand.Read(password)
+		_, _ = deriveKeyFromPassword(testPassword, salt)
+	}
+}
+*/

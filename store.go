@@ -6,18 +6,31 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+
+	"golang.org/x/crypto/argon2"
 )
 
 const (
 	// Algorithm constants
-	AlgorithmAES256GCM = 0
+	algorithmAES256GCM = 0
 
 	// File names
-	KeyDir        = ".secretskeys"
-	PrimSaltFile  = "primarysalt"
-	CurKeyIdxFile = "currentkey"
-	LockFile      = ".keylock"
+	keyDirName      = ".secretskeys"
+	primarySaltFile = "primarysalt"
+	curKeyIdxFile   = "currentkey"
+	lockFileName    = ".keylock"
+	newPwDirName    = ".secretskeys.newpw"
+	oldPwDirName    = ".secretskeys.oldpw"
+
+	// Argon2id key derivation constants
+	// These parameters provide strong security while being reasonably fast
+	argon2Time    = uint32(3)         // Number of iterations
+	argon2Memory  = uint32(48 * 1024) // 48 MB memory usage
+	argon2Threads = uint8(4)          // Number of threads
+	argon2KeyLen  = uint32(32)        // Output key length
+	saltLength    = 16                // Number of bytes for salt == 128 bits
 )
 
 // Store represents a secure storage for sensitive data
@@ -32,6 +45,7 @@ type Store struct {
 	currentKeyIndex uint8
 	dirPerm         os.FileMode
 	filePerm        os.FileMode
+	stopChan        chan struct{}
 }
 
 // KeyData represents the structure of a key file
@@ -64,10 +78,11 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 
 	store := &Store{
 		dir:           storePath,
-		keyDir:        filepath.Join(storePath, KeyDir),
-		saltFile:      filepath.Join(storePath, KeyDir, PrimSaltFile),
-		curKeyIdxFile: filepath.Join(storePath, KeyDir, CurKeyIdxFile),
-		lockFile:      filepath.Join(storePath, KeyDir, LockFile),
+		keyDir:        filepath.Join(storePath, keyDirName),
+		saltFile:      filepath.Join(storePath, keyDirName, primarySaltFile),
+		curKeyIdxFile: filepath.Join(storePath, keyDirName, curKeyIdxFile),
+		lockFile:      filepath.Join(storePath, keyDirName, lockFileName),
+		stopChan:      make(chan struct{}),
 	}
 
 	isNewStore, err := store.checkNewStore()
@@ -90,13 +105,29 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 	}
 
 	// Start watcher for key rotation done by other processes
-	go store.rotateWatch()
+	err = store.startRotateWatch()
+	if err != nil {
+		return nil, err
+	}
 
 	return store, nil
 }
 
 // Close closes the store and cleans up resources
 func (s *Store) Close() {
+	if s == nil {
+		return
+	}
+	// Send stop signal to rotateWatch goroutine
+	if s.stopChan != nil {
+		select {
+		case <-s.stopChan:
+			// Channel already closed, do nothing
+		default:
+			close(s.stopChan)
+		}
+	}
+
 	// Clear sensitive data from memory
 	Wipe(s.primaryKey)
 	Wipe(s.currentKey)
@@ -108,30 +139,133 @@ func (s *Store) Close() {
 	s.curKeyIdxFile = ""
 }
 
+// Passwd re-encrypts the decryption key on-disk with a new password.
+// It will write zeroes over the old on-disk key before writing the new
+// key, just to ensure that the old password can no longer be used to
+// decrypt the key to this store.
+//
+// WARNING:  If multiple processes are accessing the same Store, processes
+// other than the one that called this function will lose access to the
+// store until they re-open it with the new password.
+func (s *Store) Passwd(newpassword []byte) error {
+	if len(newpassword) == 0 {
+		return fmt.Errorf("password must not be empty")
+	}
+
+	lk, err := s.lockNB(s.lockFile)
+	if err != nil {
+		return fmt.Errorf("store at %s is being modified: %w", s.dir, err)
+	}
+	defer lk.unlock()
+
+	// This first copies the `.secretskeys` directory into a new
+	// directory, `.secretskeys.newpw`.  Then it updates all the keys in
+	// the new directory with the new password, then renames the current
+	// `.secretskeys` directory to `.secretskeys.oldpw`, renames
+	// `.secretskeys.newpw` to `.secretskeys`, then deletes
+	// `.secretskeys.oldpw`.  This guarantees that if the Passwd process
+	// is interrupted at any point, the store will still be accessible
+	// from either the old password or new password.
+
+	// Copy `.secretskeys` to `.secretskeys.newpw`.
+	newdir := filepath.Join(s.dir, newPwDirName)
+	cmd := exec.Command("/bin/cp", "-pr", s.keyDir, newdir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create new keys directory with %s: %w",
+			out, err)
+	}
+	defer passwdCleanup(newdir) // Deletes .newpw directory if failure happens.
+	// On success, the .newpw directory won't exist any more, so this is safe.
+
+	// Generate salt, then get new primaryKey with Argon2id
+	salt, err := generateSalt()
+	if err != nil {
+		return fmt.Errorf("failed to generate random salt: %w", err)
+	}
+	err = s.writeFile(filepath.Join(newdir, primarySaltFile), salt)
+	if err != nil {
+		return fmt.Errorf("failed to write salt for new primary key: %w", err)
+	}
+	newPrimaryKey, err := deriveKeyFromPassword(newpassword, salt)
+	Wipe(newpassword)
+	if err != nil {
+		return fmt.Errorf("failed to generate new primary key: %w", err)
+	}
+
+	keys, err := filepath.Glob(filepath.Join(newdir, "key*"))
+	if err != nil {
+		return fmt.Errorf("failed to read keys directory: %w", err)
+	}
+	for _, keyPath := range keys {
+		rawKey, err := s.loadKeyFromPath(keyPath)
+		if err != nil {
+			return fmt.Errorf("failed to read key %s: %w", keyPath, err)
+		}
+		encKey, err := encryptKey(rawKey, newPrimaryKey)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt %s: %w", keyPath, err)
+		}
+		err = s.writeFile(keyPath, encKey)
+		if err != nil {
+			return fmt.Errorf("failed to write key %s: %w", keyPath, err)
+		}
+	}
+	oldDir := filepath.Join(s.dir, oldPwDirName)
+	err = os.Rename(s.keyDir, oldDir)
+	if err != nil {
+		return fmt.Errorf("failed to move keys dir to .oldpw: %w", err)
+	}
+	err = os.Rename(newdir, s.keyDir)
+	// This had better have succeeded, or we're borked.
+	if err != nil {
+		// Try to recover by restoring the original keydir.  If that fails,
+		// there's nothing we can do to recover the store.
+		_ = os.Rename(oldDir, s.keyDir)
+		return fmt.Errorf("failed to move new keys dir: %w", err)
+	}
+
+	// New key dir is in place.  Start using new password.
+	s.primaryKey = newPrimaryKey
+	zeroOldKeys(oldDir)
+
+	return nil
+}
+
 // Check if this is an existing store or not.
 func (s *Store) checkNewStore() (bool, error) {
 	stat, err := os.Stat(s.dir)
-	if err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("error accessing %s: %w", s.dir, err)
-	} else if os.IsNotExist(err) {
+	if os.IsNotExist(err) {
 		return true, nil
+	} else if err != nil {
+		return false, fmt.Errorf("error accessing %s: %w", s.dir, err)
 	} else if !stat.IsDir() {
 		return false, fmt.Errorf("%s is not a directory: %w", s.dir, err)
 	}
 
 	// Directory exists, check if it's a valid store
-	stat, err = os.Stat(s.keyDir)
-	if os.IsNotExist(err) {
-		// No keys directory, ensure dir is empty.
-		dirFiles, err := os.ReadDir(s.dir)
-		if err != nil || len(dirFiles) != 0 {
-			return false, fmt.Errorf("%s is not empty", s.dir)
-		}
-		return true, nil
-	} else if err != nil {
+	_, err = os.Stat(s.keyDir)
+	if err != nil && !os.IsNotExist(err) {
 		return false, fmt.Errorf("error accessing %s: %w", s.keyDir, err)
-	} else if !stat.IsDir() {
-		return false, fmt.Errorf("%s is not a directory", s.dir)
+	}
+	if os.IsNotExist(err) {
+		// No keys directory
+		// Check if old keydir from Passwd() exists.
+		oldDir := filepath.Join(s.dir, oldPwDirName)
+		_, err = os.Stat(oldDir)
+		if err != nil {
+			// No keydir or oldPw keydir.  Check if dir is empty.
+			dirFiles, err := os.ReadDir(s.dir)
+			if err != nil || len(dirFiles) != 0 {
+				return false, fmt.Errorf("%s is not empty", s.dir)
+			}
+			return true, nil
+		}
+		// There is an oldpw keydir.  Check and move it if possible.
+		_, err = s.checkForOldKeysDir(oldDir)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	// Check that primary key salt, currentkey, and keyN are all there.
@@ -150,6 +284,43 @@ func (s *Store) checkNewStore() (bool, error) {
 	}
 
 	return false, nil
+}
+
+func (s *Store) checkForOldKeysDir(oldDir string) (os.FileInfo, error) {
+	// Old directory is here, restore it.  Passwd() failed between
+	// moving the keydir to .oldpw and moving .newpw to the keydir.
+
+	// First make sure no one else is restoring or restored the
+	// directory.
+	lockfile := filepath.Join(oldDir, lockFileName)
+	lk, err := s.lock(lockfile)
+	if err != nil {
+		// Directory could have been moved before the lock could be
+		// acquired.
+		stat, err := os.Stat(s.keyDir)
+		if err != nil {
+			return nil, fmt.Errorf("error checking keys directory: %w", err)
+		}
+		return stat, nil
+	}
+	defer lk.unlock()
+	stat, err := os.Stat(s.keyDir)
+	if err != nil {
+		// Nothing else moved this to the normal keys directory while
+		// waiting for the lock. Now make sure the oldDir still exists.
+		stat, err = os.Stat(oldDir)
+		if err != nil {
+			// Something went terribly wrong.
+			return nil, fmt.Errorf("keys directory corrupted: %w", err)
+		}
+		err = os.Rename(oldDir, s.keyDir)
+		if err != nil {
+			// Again, something went terribly wrong.
+			return nil, fmt.Errorf("could not restore keys directory: %w", err)
+		}
+	}
+	// The old directory has been restored.
+	return stat, nil
 }
 
 func (s *Store) createNewStore(password []byte) error {
@@ -192,7 +363,7 @@ func (s *Store) createNewStore(password []byte) error {
 }
 
 func (s *Store) openExistingStore(password []byte) error {
-	lk, err := s.rLockNB(s.lockFile)
+	lk, err := s.rLock(s.lockFile)
 	if err != nil {
 		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
 	}
@@ -212,6 +383,10 @@ func (s *Store) openExistingStore(password []byte) error {
 	}
 	s.dirPerm = stat.Mode() & os.ModePerm
 	s.filePerm = s.dirPerm & 0666 // Remove execute bit
+
+	// In case a Passwd() call was interrupted in the middle, blow away
+	// any existing new password directory.
+	_ = os.RemoveAll(filepath.Join(s.dir, newPwDirName))
 
 	return nil
 }
@@ -285,8 +460,20 @@ func (s *Store) newKey(index uint8) ([]byte, error) {
 		return nil, fmt.Errorf("failed to generate key: %w", err)
 	}
 
+	encKey, err := encryptKey(key, s.primaryKey)
+	if err != nil {
+		return nil, err
+	}
+	err = s.writeFile(keyPath, encKey)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func encryptKey(rawKey []byte, encKey []byte) ([]byte, error) {
 	// Encrypt the key with primary key using AES-GCM
-	block, err := aes.NewCipher(s.primaryKey[:32])
+	block, err := aes.NewCipher(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -303,8 +490,8 @@ func (s *Store) newKey(index uint8) ([]byte, error) {
 
 	// Create key data structure
 	keyData := &KeyData{
-		Algorithm:    AlgorithmAES256GCM,
-		EncryptedKey: gcm.Seal(nil, nonce, key, nil),
+		Algorithm:    algorithmAES256GCM,
+		EncryptedKey: gcm.Seal(nil, nonce, rawKey, nil),
 	}
 
 	// Serialize key data
@@ -313,20 +500,19 @@ func (s *Store) newKey(index uint8) ([]byte, error) {
 	copy(data[1:], nonce)
 	copy(data[1+len(nonce):], keyData.EncryptedKey)
 
-	// Save key.
-	//	fmt.Printf("kdbg: Saving key %s\n", keyPath)
-	err = s.writeFile(keyPath, data)
-	if err != nil {
-		return nil, err
-	}
-	return key, nil
+	return data, nil
 }
 
-// loadKey loads and decrypts a key
+// loadKey loads and decrypts a key based on the key index.
 func (s *Store) loadKey(index uint8) ([]byte, error) {
 	keyPath := filepath.Join(s.keyDir, fmt.Sprintf("key%d", index))
 
-	data, err := s.readFile(keyPath)
+	return s.loadKeyFromPath(keyPath)
+}
+
+// loadKeyFromPath loads and decrypts a key given the path to the key file.
+func (s *Store) loadKeyFromPath(path string) ([]byte, error) {
+	data, err := s.readFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}
@@ -336,7 +522,7 @@ func (s *Store) loadKey(index uint8) ([]byte, error) {
 	}
 
 	algorithm := data[0]
-	if algorithm != AlgorithmAES256GCM {
+	if algorithm != algorithmAES256GCM {
 		return nil, fmt.Errorf("unsupported algorithm: %d", algorithm)
 	}
 
@@ -369,12 +555,72 @@ func (s *Store) loadKey(index uint8) ([]byte, error) {
 // checkForOldKeys checks for inconsistent key usage and recovers if needed
 func (s *Store) checkForOldKeys() error {
 	// Get list of key files
+	lk, err := s.rLock(s.lockFile)
+	if err != nil {
+		return fmt.Errorf("error locking %s: %w", s.keyDir, err)
+	}
 	keys, err := filepath.Glob(filepath.Join(s.keyDir, "key*"))
+	lk.unlock()
 	if err != nil {
 		return fmt.Errorf("failed to read keys directory: %w", err)
 	}
 	if len(keys) > 1 {
-		go s.updateFiles()
+		go s.updateFiles(0)
 	}
 	return nil
+}
+
+// Removes .newpw directory if it exists.
+func passwdCleanup(dir string) {
+	_ = os.RemoveAll(dir)
+}
+
+// zeroOldKeys writes zeroes over top of all old key files.
+func zeroOldKeys(dir string) {
+	defer os.RemoveAll(dir) //nolint: errcheck
+
+	keys, err := filepath.Glob(filepath.Join(dir, "key*"))
+	if err != nil {
+		// Nothing we can do to zero the keys.
+		return
+	}
+	for _, keyPath := range keys {
+		st, err := os.Stat(keyPath)
+		if err != nil {
+			continue
+		}
+		f, err := os.OpenFile(keyPath, os.O_WRONLY, 0600)
+		if err != nil {
+			continue
+		}
+		if st.Size() > 256*1024 {
+			// Key files should be MUCH less than 256k, so to make
+			// sure zeroes doesn't get too huge, make this check.
+			continue
+		}
+		zeroes := make([]byte, st.Size())
+		_, _ = f.WriteAt(zeroes, 0)
+	}
+}
+
+// deriveKeyFromPassword derives a key from a password using Argon2id
+// Argon2id is the recommended password hashing function by OWASP and provides
+// strong resistance against both side-channel and timing attacks.
+func deriveKeyFromPassword(password []byte, salt []byte) ([]byte, error) {
+	if len(salt) < saltLength {
+		return nil, fmt.Errorf("salt must be at least %d bytes", saltLength)
+	}
+
+	// Use Argon2id for key derivation
+	key := argon2.IDKey(password, salt,
+		argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
+
+	return key, nil
+}
+
+// generateSalt generates a random salt for key derivation
+func generateSalt() ([]byte, error) {
+	salt := make([]byte, saltLength)
+	_, err := rand.Read(salt)
+	return salt, err
 }

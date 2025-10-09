@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -253,4 +254,136 @@ func TestFileLock_unlock(t *testing.T) {
 		// Should not panic or cause an error
 		assert.NotPanics(func() { lk.unlock() })
 	})
+}
+
+func BenchmarkLockExisting(b *testing.B) {
+	// Setup: Create a new store
+	dir := filepath.Join(testStoreDir, "lock_bench")
+	_ = os.RemoveAll(dir)
+	err := os.MkdirAll(dir, 0700)
+	if err != nil {
+		fmt.Printf("Failed to create test directory %s: %v", dir, err)
+		return
+	}
+	defer os.RemoveAll(dir) //nolint: errcheck
+
+	s := &Store{
+		dir:      dir,
+		dirPerm:  0700,
+		filePerm: 0600,
+	}
+
+	path := filepath.Join(dir, "testfile")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
+	if err != nil {
+		return
+	}
+	_ = f.Close()
+
+	b.ResetTimer()
+	for b.Loop() {
+		lk, err := s.lock(path)
+		if err != nil {
+			fmt.Printf("Failed to lock %s: %v", path, err)
+			return
+		}
+		lk.unlock()
+	}
+}
+
+func BenchmarkLockNBExisting(b *testing.B) {
+	// Setup: Create a new store
+	dir := filepath.Join(testStoreDir, "lock_bench")
+	_ = os.RemoveAll(dir)
+	err := os.MkdirAll(dir, 0700)
+	if err != nil {
+		fmt.Printf("Failed to create test directory %s: %v", dir, err)
+		return
+	}
+	defer os.RemoveAll(dir) //nolint: errcheck
+
+	s := &Store{
+		dir:      dir,
+		dirPerm:  0700,
+		filePerm: 0600,
+	}
+
+	path := filepath.Join(dir, "testfile")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, s.filePerm)
+	if err != nil {
+		return
+	}
+	_ = f.Close()
+
+	b.ResetTimer()
+	for b.Loop() {
+		lk, err := s.lockNB(path)
+		if err != nil {
+			fmt.Printf("Failed to lock %s: %v", path, err)
+			return
+		}
+		lk.unlock()
+	}
+}
+
+func BenchmarkLockNew(b *testing.B) {
+	dir := filepath.Join(testStoreDir, "lock_bench")
+	_ = os.RemoveAll(dir)
+	err := os.MkdirAll(dir, 0700)
+	if err != nil {
+		fmt.Printf("Failed to create test directory %s: %v", dir, err)
+		return
+	}
+	defer os.RemoveAll(dir) //nolint: errcheck
+
+	s := &Store{
+		dir:      dir,
+		dirPerm:  0700,
+		filePerm: 0600,
+	}
+
+	i := 0
+
+	b.ResetTimer()
+	for b.Loop() {
+		i++
+		path := filepath.Join(dir, fmt.Sprintf("file%d", i))
+		lk, err := s.lock(path)
+		if err != nil {
+			fmt.Printf("Failed to lock %s: %v", path, err)
+			return
+		}
+		lk.unlock()
+	}
+}
+
+func BenchmarkLockNBNew(b *testing.B) {
+	dir := filepath.Join(testStoreDir, "lock_bench")
+	_ = os.RemoveAll(dir)
+	err := os.MkdirAll(dir, 0700)
+	if err != nil {
+		fmt.Printf("Failed to create test directory %s: %v", dir, err)
+		return
+	}
+	defer os.RemoveAll(dir) //nolint: errcheck
+
+	s := &Store{
+		dir:      dir,
+		dirPerm:  0700,
+		filePerm: 0600,
+	}
+
+	i := 0
+
+	b.ResetTimer()
+	for b.Loop() {
+		i++
+		path := filepath.Join(dir, fmt.Sprintf("file%d", i))
+		lk, err := s.lockNB(path)
+		if err != nil {
+			fmt.Printf("Failed to lock %s: %v", path, err)
+			return
+		}
+		lk.unlock()
+	}
 }

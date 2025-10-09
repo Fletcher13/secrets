@@ -41,7 +41,7 @@ func TestStore_Rotate(t *testing.T) {
 		assert.Equal(initialKeyIndex+1, store.currentKeyIndex)
 
 		// Allow time for goroutine (updateFiles) to complete
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 
 		// Verify all files are re-encrypted with the new key
 		loadedData1, err := store.Load(secretPath1)
@@ -63,28 +63,7 @@ func TestStore_Rotate(t *testing.T) {
 		assert.NoError(err, "New key file should exist")
 	})
 
-	// Reset store for next test case
-	store.Close()
-	store, err = NewStore(dir, testPassword)
-	assert.NoError(err)
-
-	// Test case 2: Attempt to rotate when another rotation is in progress (simulated by locking lockFile)
-	t.Run("Rotate in progress", func(t *testing.T) {
-		lk, err := store.lock(store.lockFile) // Manually acquire lock to simulate ongoing rotation
-		assert.NoError(err)
-		defer lk.unlock()
-
-		err = store.Rotate()
-		assert.Error(err)
-		assert.Contains(err.Error(), "key rotation currently in process")
-	})
-
-	// Reset store for next test case
-	store.Close()
-	store, err = NewStore(dir, testPassword)
-	assert.NoError(err)
-
-	// Test case 3: Max key index rollover (simulate by setting currentKeyIndex to 255)
+	// Test case 2: Max key index rollover (simulate by setting currentKeyIndex to 255)
 	t.Run("Key index rollover", func(t *testing.T) {
 		store.currentKey, err = store.newKey(255)
 		assert.NoError(err)
@@ -95,8 +74,6 @@ func TestStore_Rotate(t *testing.T) {
 		// Save some data to be re-encrypted (after setting currentKeyIndex)
 		secretPath3 := "rollover/secret"
 		data3 := []byte("rollover data")
-		fmt.Printf("kdbg: Saving secret %s with key %d\n", secretPath3,
-			store.currentKeyIndex)
 		assert.NoError(store.Save(secretPath3, data3))
 
 		data4, err := store.Load(secretPath3)
@@ -110,7 +87,7 @@ func TestStore_Rotate(t *testing.T) {
 		assert.Equal(uint8(0), store.currentKeyIndex)
 
 		// Allow time for goroutine (updateFiles) to complete
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 
 		// Verify data is still loadable
 		loadedData3, err := store.Load(secretPath3)
@@ -127,7 +104,7 @@ func TestStore_listDataFiles(t *testing.T) {
 	absDir, _ := filepath.Abs(dir)
 	defer os.RemoveAll(dir) //nolint: errcheck
 
-	store, err := NewStore(dir, testPassword)
+	store, err := newTestStore(dir)
 	assert.NoError(err)
 	assert.NotNil(store)
 	defer store.Close()

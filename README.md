@@ -1,5 +1,5 @@
 
-# secrets
+# darkstore
 
 Golang package to securely save passwords, keys, and other sensitive data.
 
@@ -19,47 +19,52 @@ corruption from multiple process access.
 
 ## Installation
 
-To install the `secrets` package, use `go get`:
+To install the `darkstore` package, use `go get`:
 
 ```bash
-go get github.com/fletcher13/secrets
+go get github.com/kenm928/darkstore
 ```
 
 This package requires Go 1.24 or later.
+
+## Overview
+
+A set of data protected by a single password is called a 'store'.  Each
+darkstore store lives in its own directory.  The data is protected by a
+symmetric encryption algorithm.  Currently only AES256GCM is supported,
+but the library is designed to support any symmetric key algorithm in
+the future.
+
+A random key is generated that is used to encrypt the actual data, and
+that key is stored with the data encrypted by a user-given password.
 
 ## Usage
 
 ### Creating or Opening a Secret Store
 
-To create a new `secrets.Store` or open an existing one, use
-`secrets.NewStore(dirpath string, password []byte)`.
+To create a new `darkstore.Store` or open an existing one, use
+`darkstore.NewStore(dirpath string, password []byte)`.
 
-- If `dirpath` is an empty directory, a new store will be initialized
-  there.
+- If `dirpath` is an empty directory or does not exist, a new store will
+  be initialized there.
 - If `dirpath` contains an existing store, the store will be opened for
   use.
 - An error will be returned if `dirpath` is not empty and does not
-  contain a secrets store.
+  contain a darkstore store.
 
-The `password` parameter is crucial for decrypting the store's internal
-keys. This password should *not* be saved with the secrets store, as
+The `password` parameter is required for decrypting the store's internal
+keys. This password should *not* be saved with the darkstore store, as
 that would defeat the purpose of encrypting the data.  The password is
 then hashed with Argon2id to generate the key used to encrypt/decrypt
 the key(s) used to encrypt/decrypt the sensitive data.
-
-TODO: If `password` is nil or zero length, and a new store will be
-created, a random key will be created and it will attempt to use TPM2.0
-to seal that key, and save the sealed key with the store in a file
-called `sealedkey` in the `.secretskeys` directory.  If `password` is
-nil and this opens an existing store, it will look for the `sealedkey`
-file and attempt to unseal it with TPM2.0.  If that does not work, an
-error will be returned.
 
 ### Key Rotation
 
 The `store.Rotate()` method allows you to generate a new encryption key
 for the store and re-encrypt all existing data with the new key. This is
 a crucial security feature for regularly updating your encryption keys.
+
+TODO: Figure out logging for a library.
 
 ### Updating Password
 
@@ -74,7 +79,7 @@ Never put sensitive data in a string, always use a byte slice.  Byte
 slices can be zeroed when the data is no longer needed, but strings
 cannot be zeroed in Go.
 
-Use the `secrets.Wipe()` function to zero out sensitive data when that
+Use the `darkstore.Wipe()` function to zero out sensitive data when that
 data is no longer needed.  This is required for FIPS-140 and Common
 Criteria compliance.
 
@@ -88,7 +93,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/fletcher13/secrets"
+	"github.com/kenm928/darkstore"
 )
 
 func main() {
@@ -104,12 +109,12 @@ func main() {
 	}
 	defer os.RemoveAll(dir) // Clean up the directory when done
 
-	store, err := secrets.NewStore(dir, password)
+	store, err := darkstore.NewStore(dir, password)
 	if err != nil {
 		fmt.Printf("Error creating/opening store: %v\n", err)
 		return
 	}
-	secrets.Wipe(password)
+	darkstore.Wipe(password)
 
 	// Save sensitive data
 	secretPath := "my/api/key"
@@ -133,12 +138,12 @@ func main() {
 
 ## Implementation Details
 
-Every `secrets.Store` directory contains a `.secretskeys`
+Every `darkstore.Store` directory contains a `.darkstorekeys`
 subdirectory. This directory manages the encryption keys for the store.
 
 ### Key Management
 
-In the `.secretskeys` directory, you will find:
+In the `.darkstorekeys` directory, you will find:
 - `currentkey`: A single byte file indicating which key number (0-255)
   is currently used for newly encrypted data.
 - `key<N>`: One or more binary files, where `<N>` is a number between 0
@@ -146,7 +151,7 @@ In the `.secretskeys` directory, you will find:
   index. The first byte of a `key<N>` file indicates the encryption
   algorithm used (currently, only algorithm 0, AES256GCM, is defined),
   followed by the key itself, encrypted with the key passed in to
-  `secrets.NewStore()`.
+  `darkstore.NewStore()`.
 - `primarysalt`: A binary file containing the salt used for hashing the
   store's password with Argon2id.
 - `.keylock`: An empty file used with flock(2) to prevent multiple
@@ -154,7 +159,7 @@ In the `.secretskeys` directory, you will find:
 
 ### Data Storage
 
-All other files in the `secrets.Store` directory are encrypted user
+All other files in the `darkstore.Store` directory are encrypted user
 data. When `store.Save(path, data)` is called:
 - The `path` is cleaned and validated to ensure it remains within the
   store's hierarchy.
@@ -164,7 +169,7 @@ data. When `store.Save(path, data)` is called:
 
 ### Store Initialization and Key Generation
 
-When `secrets.NewStore()` is called on an empty directory:
+When `darkstore.NewStore()` is called on an empty directory:
 - It initializes `currentkey` to 0.
 - Generates, encrypts, and saves `key0`.
 

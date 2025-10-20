@@ -1,4 +1,4 @@
-module github.com/fletcher13/secrets
+module github.com/kenm928/darkstore
 
 go 1.24.0
 

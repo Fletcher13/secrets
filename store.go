@@ -1,4 +1,4 @@
-package secrets
+package darkstore
 
 import (
 	"crypto/aes"
@@ -17,12 +17,13 @@ const (
 	algorithmAES256GCM = 0
 
 	// File names
-	keyDirName      = ".secretskeys"
+	keyDirName      = ".darkstorekeys"
 	primarySaltFile = "primarysalt"
 	curKeyIdxFile   = "currentkey"
 	lockFileName    = ".keylock"
-	newPwDirName    = ".secretskeys.newpw"
-	oldPwDirName    = ".secretskeys.oldpw"
+	tempDirName     = "tempfiles"
+	newPwDirName    = ".darkstorekeys.newpw"
+	oldPwDirName    = ".darkstorekeys.oldpw"
 
 	// Argon2id key derivation constants
 	// These parameters provide strong security while being reasonably fast
@@ -40,12 +41,14 @@ type Store struct {
 	saltFile        string
 	curKeyIdxFile   string
 	lockFile        string
+	tempDir         string
 	primaryKey      []byte
 	currentKey      []byte
 	currentKeyIndex uint8
 	dirPerm         os.FileMode
 	filePerm        os.FileMode
 	stopChan        chan struct{}
+	doDebug         bool
 }
 
 // KeyData represents the structure of a key file
@@ -61,12 +64,18 @@ type DataFile struct {
 	Nonce         []byte
 }
 
+// TODO: Figure out a way to do logging appropriate to the calling program.
+func (s *Store) debug(format string, args ...interface{}) {
+	if s.doDebug {
+		fmt.Println("dbg:", fmt.Sprintf(format, args...))
+	}
+}
+
 // TODO: Ensure keys cannot be written to swap or core files.
 
 // NewStore creates a new Store object, either opening an existing
 // on-disk store at dirpath, or creating a new store at dirpath.
 func NewStore(dirpath string, password []byte) (*Store, error) {
-	// TODO: if len(password) == 0 { Use TPM2.0 sealed key }
 	if len(password) == 0 {
 		return nil, fmt.Errorf("password must not be empty")
 	}
@@ -82,7 +91,9 @@ func NewStore(dirpath string, password []byte) (*Store, error) {
 		saltFile:      filepath.Join(storePath, keyDirName, primarySaltFile),
 		curKeyIdxFile: filepath.Join(storePath, keyDirName, curKeyIdxFile),
 		lockFile:      filepath.Join(storePath, keyDirName, lockFileName),
+		tempDir:       filepath.Join(storePath, keyDirName, tempDirName),
 		stopChan:      make(chan struct{}),
+		doDebug:       true,
 	}
 
 	isNewStore, err := store.checkNewStore()
@@ -158,16 +169,16 @@ func (s *Store) Passwd(newpassword []byte) error {
 	}
 	defer lk.unlock()
 
-	// This first copies the `.secretskeys` directory into a new
-	// directory, `.secretskeys.newpw`.  Then it updates all the keys in
+	// This first copies the `.darkstorekeys` directory into a new
+	// directory, `.darkstorekeys.newpw`.  Then it updates all the keys in
 	// the new directory with the new password, then renames the current
-	// `.secretskeys` directory to `.secretskeys.oldpw`, renames
-	// `.secretskeys.newpw` to `.secretskeys`, then deletes
-	// `.secretskeys.oldpw`.  This guarantees that if the Passwd process
+	// `.darkstorekeys` directory to `.darkstorekeys.oldpw`, renames
+	// `.darkstorekeys.newpw` to `.darkstorekeys`, then deletes
+	// `.darkstorekeys.oldpw`.  This guarantees that if the Passwd process
 	// is interrupted at any point, the store will still be accessible
 	// from either the old password or new password.
 
-	// Copy `.secretskeys` to `.secretskeys.newpw`.
+	// Copy `.darkstorekeys` to `.darkstorekeys.newpw`.
 	newdir := filepath.Join(s.dir, newPwDirName)
 	cmd := exec.Command("/bin/cp", "-pr", s.keyDir, newdir)
 	out, err := cmd.CombinedOutput()
@@ -268,7 +279,8 @@ func (s *Store) checkNewStore() (bool, error) {
 		}
 	}
 
-	// Check that primary key salt, currentkey, and keyN are all there.
+	// Check that the primary key salt, currentkeyindex, and keyN files
+	// are all there.
 	_, err = os.Stat(s.saltFile)
 	if err != nil {
 		return false, fmt.Errorf("%s is not a valid store, no salt file", s.dir)

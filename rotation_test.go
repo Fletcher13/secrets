@@ -1,4 +1,4 @@
-package secrets
+package darkstore
 
 import (
 	"fmt"
@@ -160,6 +160,7 @@ func TestStore_reencryptFile(t *testing.T) {
 	assert.NoError(err)
 	assert.NotNil(store)
 	defer store.Close()
+	assert.NoError(os.MkdirAll(store.tempDir, store.dirPerm))
 
 	// Save an initial secret
 	secretPath := "my/reencrypt/secret"

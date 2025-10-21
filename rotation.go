@@ -1,4 +1,4 @@
-package secrets
+package darkstore
 
 import (
 	"fmt"
@@ -52,6 +52,13 @@ func (s *Store) updateFiles(calls int) {
 		// TODO: Write unit test for this case.
 		return
 	}
+	err := os.MkdirAll(s.tempDir, s.dirPerm)
+	if err != nil {
+		// Could not create temporary directory.
+		// TODO: Log an error message.
+		return
+	}
+
 	// Get list of all files to re-encrypt
 	files, err := s.listDataFiles()
 	if err != nil {
@@ -97,6 +104,7 @@ func (s *Store) updateFiles(calls int) {
 			_ = os.Remove(keyFile)
 		}
 	}
+	_ = os.RemoveAll(s.tempDir)
 }
 
 // listDataFiles returns all data files (excluding key files)
@@ -127,6 +135,7 @@ func (s *Store) listDataFiles() ([]string, error) {
 func (s *Store) reencryptFile(path string) {
 	lk, err := s.lock(path)
 	if err != nil {
+		s.debug("failed to acquire lock for %s", path)
 		return
 	}
 	defer lk.unlock()
@@ -135,12 +144,14 @@ func (s *Store) reencryptFile(path string) {
 	encryptedData, err := os.ReadFile(path)
 	if err != nil {
 		// Failed to read file.  Delete it.
+		s.debug("failed to read %s: %s", path, err.Error())
 		_ = os.Remove(path)
 		return
 	}
 
 	if len(encryptedData) < 1 {
 		// Invalid file format, so no useful data.  Delete this file.
+		s.debug("zero length file: %s", path)
 		_ = os.Remove(path)
 		return
 	}
@@ -155,6 +166,7 @@ func (s *Store) reencryptFile(path string) {
 	data, err := s.decryptData(encryptedData)
 	if err != nil {
 		// Failed to decrypt, so this data is useless.  Delete this file.
+		s.debug("failed to decrypt %s: %s", path, err.Error())
 		_ = os.Remove(path)
 		return
 	}
@@ -164,11 +176,39 @@ func (s *Store) reencryptFile(path string) {
 	if err != nil {
 		// failed to encrypt with new key, just return leaving file
 		// encrypted by old key
+		s.debug("failed to encrypt %s: %s", path, err.Error())
 		return
 	}
 
-	// Write back to file
-	_ = os.WriteFile(path, newEncryptedData, s.filePerm)
+	// Write newly encrypted file to a temp file, then move it into place
+	// to make the write as atomic as possible.
+	f, err := os.CreateTemp(s.tempDir, filepath.Base(path))
+	if err != nil {
+		s.debug("failed to create temp file %s: %s", path, err.Error())
+		return
+	}
+	tmpPath := f.Name()
+	defer f.Close() //nolint:errcheck
+	if err = f.Chmod(s.filePerm); err != nil {
+		s.debug("failed to chmod temp file %s: %s", path, err.Error())
+		_ = os.Remove(tmpPath)
+		return
+	}
+	_, err = f.Write(newEncryptedData)
+	if err != nil {
+		// Failed to write newly encrypted file.
+		// Delete the possibly partially written temp file but
+		// leave the original file encrypted by old key
+		s.debug("failed to write to temp file %s: %s", path, err.Error())
+		_ = os.Remove(tmpPath)
+		return
+	}
+
+	err = os.Rename(tmpPath, path)
+	if err != nil {
+		s.debug("failed to move temp file %s: %s", path, err.Error())
+		return
+	}
 }
 
 // startRotateWatch initializes an fsnotify watch on the keys directory

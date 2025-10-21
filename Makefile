@@ -1,8 +1,8 @@
-.PHONY: build test clean example vendor
+.PHONY: build test cover example clean vendor deps lint bench all help
 
 # Build the library
 build:
-	@echo "Building secrets library..."
+	@echo "Building darkstore library..."
 	go build -v ./...
 
 # Run tests
@@ -51,8 +51,11 @@ bench:
 	@echo "Running benchmark tests..."
 	go test -bench=. -run=^$
 
-# Build everything
-all: build lint test
+# Build and test
+all:
+	make build
+	make lint
+	make test
 
 # Help
 help:
